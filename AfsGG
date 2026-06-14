@@ -1,0 +1,227 @@
+-- RE-BUILD: ดึง Source Code ล่าสุดของ Rayfield UI (เวอร์ชันแก้ไขบัค 404)
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+local Window = Rayfield:CreateWindow({
+   Name = "Monhub | Auto Farm V3",
+   LoadingTitle = "Loading Monhub Setup...",
+   LoadingSubtitle = "Re-built for MENEE Store",
+   ConfigurationSaving = { Enabled = false }
+})
+
+-- Services
+local Players = game:GetService("Players")
+local VirtualUser = game:GetService("VirtualUser")
+local LocalPlayer = Players.LocalPlayer
+
+-- Variables
+local savedPosition = nil
+local selectedBosses = {}
+local selectedEquipSlot = "None"
+local selectedSkills = {}
+
+-- Loop States
+local autoFarmEnabled = false
+local autoEquipEnabled = false
+local autoSkillEnabled = false
+
+-- ตารางจับคู่ชื่อบอสในเมนูกับโมเดลจริงในเกม
+local bossConfig = {
+    ["Crocodile"] = "Crocodile",
+    ["Armored Titan"] = "ArmoredTitan",
+    ["Great Ape"] = "GreatApe"
+}
+
+-- ฟังก์ชันจำลองอินพุตคีย์บอร์ดแบบเสถียร
+local function pressKey(keyCodeEnum)
+    VirtualUser:CaptureController()
+    game:GetService("GuiService"):TypeKey(keyCodeEnum)
+end
+
+-- สร้างเมนู Tabs
+local MainTab = Window:CreateTab("Main Farm", 4483362458)
+local UtilityTab = Window:CreateTab("Utilities", 4483362458)
+
+---------------------------------------------------------
+-- [MAIN FARM TAB]
+---------------------------------------------------------
+MainTab:CreateSection("Boss Farming")
+
+MainTab:CreateDropdown({
+   Name = "Select Bosses (Multi-Select)",
+   Options = {"Crocodile", "Armored Titan", "Great Ape"},
+   CurrentOption = {},
+   MultipleOptions = true,
+   Callback = function(Options)
+      selectedBosses = {}
+      for bossName, isSelected in pairs(Options) do
+          if isSelected then
+              table.insert(selectedBosses, bossName)
+          end
+      end
+   end,
+})
+
+MainTab:CreateToggle({
+   Name = "Auto Farm Boss",
+   CurrentValue = false,
+   Flag = "AutoFarmFlag",
+   Callback = function(Value)
+      autoFarmEnabled = Value
+      if autoFarmEnabled then
+          task.spawn(function()
+              while autoFarmEnabled do
+                  local character = LocalPlayer.Character
+                  local hrp = character and character:FindFirstChild("HumanoidRootPart")
+                  local bossFound = false
+                  
+                  if hrp and character:FindFirstChildOfClass("Humanoid") and character.Humanoid.Health > 0 then
+                      local clientEntities = workspace:FindFirstChild("ClientEntities")
+                      
+                      if clientEntities then
+                          for _, displayName in ipairs(selectedBosses) do
+                              local internalName = bossConfig[displayName]
+                              local bossModel = clientEntities:FindFirstChild(internalName)
+                              
+                              -- ตรวจสอบโครงสร้างบอสตามที่คุณบรีฟ: workspace.ClientEntities.(ชื่อบอส).HumanoidRootPart
+                              if bossModel and bossModel:FindFirstChild("HumanoidRootPart") then
+                                  local bossHumanoid = bossModel:FindFirstChildOfClass("Humanoid")
+                                  if not bossHumanoid or (bossHumanoid and bossHumanoid.Health > 0) then
+                                      bossFound = true
+                                      -- วาปไปจอดตรงกลางตัวบอสทันที
+                                      hrp.CFrame = bossModel.HumanoidRootPart.CFrame
+                                      task.wait(0.05)
+                                      break
+                                  end
+                              end
+                          end
+                      end
+                      
+                      -- ถ้าบอสไม่เกิด/หาไม่เจอ และมีจุดเซฟ ให้วาปกลับจุดเซฟ
+                      if not bossFound and savedPosition then
+                          hrp.CFrame = savedPosition
+                      end
+                  end
+                  task.wait(0.1)
+              end
+          end)
+      end
+   end,
+})
+
+MainTab:CreateSection("Position Safe-Zone")
+
+MainTab:CreateButton({
+   Name = "Save Current Position",
+   Callback = function()
+       local character = LocalPlayer.Character
+       local hrp = character and character:FindFirstChild("HumanoidRootPart")
+       if hrp then
+           savedPosition = hrp.CFrame
+           Rayfield:Notify({
+              Title = "Position Saved",
+              Content = "บันทึกพิกัดสแตนด์บายสำเร็จ!",
+              Duration = 3,
+              Image = 4483362458,
+           })
+       end
+   end,
+})
+
+---------------------------------------------------------
+-- [UTILITIES TAB]
+---------------------------------------------------------
+UtilityTab:CreateSection("Auto Equip System")
+
+UtilityTab:CreateDropdown({
+   Name = "Select Active Slot (1-5)",
+   Options = {"1", "2", "3", "4", "5"},
+   CurrentOption = "1",
+   MultipleOptions = false,
+   Callback = function(Option)
+      selectedEquipSlot = Option
+   end,
+})
+
+UtilityTab:CreateToggle({
+   Name = "Auto Equip Weapon",
+   CurrentValue = false,
+   Flag = "AutoEquipFlag",
+   Callback = function(Value)
+      autoEquipEnabled = Value
+      if autoEquipEnabled then
+          task.spawn(function()
+              while autoEquipEnabled do
+                  local character = LocalPlayer.Character
+                  local backpack = LocalPlayer:FindFirstChild("Backpack")
+                  
+                  if character and backpack and selectedEquipSlot ~= "None" then
+                      -- เช็คก่อนว่าถือของอยู่หรือยัง ถ้ามีไอเทมคาในมือ (Tool) จะไม่กดซ้ำให้มันเก็บเข้ากระเป๋า
+                      local holdingTool = character:FindFirstChildOfClass("Tool")
+                      
+                      if not holdingTool then
+                          local tools = backpack:GetChildren()
+                          local slotIndex = tonumber(selectedEquipSlot)
+                          
+                          if tools[slotIndex] and tools[slotIndex]:IsA("Tool") then
+                              character:FindFirstChildOfClass("Humanoid"):EquipTool(tools[slotIndex])
+                          end
+                      end
+                  end
+                  task.wait(0.3)
+              end
+          end)
+      end
+   end,
+})
+
+UtilityTab:CreateSection("Auto Skills Loop")
+
+local alphabet = {}
+for i = 65, 90 do
+    table.insert(alphabet, string.char(i))
+end
+
+UtilityTab:CreateDropdown({
+   Name = "Select Cast Keys (A-Z)",
+   Options = alphabet,
+   CurrentOption = {},
+   MultipleOptions = true,
+   Callback = function(Options)
+      selectedSkills = {}
+      for keyName, isSelected in pairs(Options) do
+          if isSelected then
+              table.insert(selectedSkills, keyName)
+          end
+      end
+   end,
+})
+
+UtilityTab:CreateToggle({
+   Name = "Auto Skill Loop",
+   CurrentValue = false,
+   Flag = "AutoSkillFlag",
+   Callback = function(Value)
+      autoSkillEnabled = Value
+      if autoSkillEnabled then
+          task.spawn(function()
+              while autoSkillEnabled do
+                  for _, key in ipairs(selectedSkills) do
+                      if not autoSkillEnabled then break end
+                      pressKey(Enum.KeyCode[key])
+                      task.wait(0.05)
+                  end
+                  task.wait(0.2)
+              end
+          end)
+      end
+   end,
+})
+
+UtilityTab:CreateSection("Input Diagnostics")
+
+UtilityTab:CreateButton({
+   Name = "Test Spacebar (Jump)",
+   Callback = function()
+       pressKey(Enum.KeyCode.Space)
+   end,
+})
+
