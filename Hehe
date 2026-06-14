@@ -1,7 +1,7 @@
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 local Window = Rayfield:CreateWindow({
-   Name = "Auto Farm Boss Hub (Fixed)",
+   Name = "Auto Farm Boss Hub (V3 Fixed)",
    LoadingTitle = "Loading Script...",
    LoadingSubtitle = "by Gemini AI",
    ConfigurationSaving = {
@@ -15,7 +15,7 @@ local LocalPlayer = game.Players.LocalPlayer
 local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
 local VirtualInputManager = game:GetService("VirtualInputManager")
 
--- รายชื่อโมเดลบอสที่ต้องค้นหา
+-- รายชื่อโมเดลบอสที่แท้จริงในโฟลเดอร์ ClientEntities
 local BossNames = {
     ["Crocodile"] = "Crocodile",
     ["Armored Titan"] = "ArmoredTitan",
@@ -36,10 +36,34 @@ LocalPlayer.CharacterAdded:Connect(function(char)
     Character = char
 end)
 
--- ฟังก์ชันวาร์ป
-local function Teleport(cframe)
+-- ฟังก์ชันช่วยสแกนหาบอสใน ClientEntities โดยละเอียด
+local function FindBossInEntities(bossName)
+    local clientEntities = workspace:FindFirstChild("ClientEntities")
+    
+    if clientEntities then
+        -- ลองหาแบบระบุชื่อตรงๆ ก่อน
+        local boss = clientEntities:FindFirstChild(bossName)
+        if boss and boss:FindFirstChild("HumanoidRootPart") then
+            return boss
+        end
+        
+        -- ถ้ายังไม่เจอ ให้ลองค้นหาแบบวนลูปเช็คชื่อ (เผื่อชื่อมีเว้นวรรคหรือพิมพ์เล็กพิมพ์ใหญ่ต่างกัน)
+        for _, child in pairs(clientEntities:GetChildren()) do
+            if child.Name:lower() == bossName:lower() and child:FindFirstChild("HumanoidRootPart") then
+                return child
+            end
+        end
+    end
+    return nil
+end
+
+-- ฟังก์ชันสำหรับบังคับเคลียร์สตรีมและวาร์ป (ช่วยให้ Render ระยะไกลทำงาน)
+local function SafeTeleport(targetCFrame)
     if Character and Character:FindFirstChild("HumanoidRootPart") then
-        Character.HumanoidRootPart.CFrame = cframe
+        -- แก้ปัญหา StreamingEnabled: บังคับให้โลคอลเพลเยอร์รับรู้พิกัดปลายทางล่วงหน้า
+        LocalPlayer:RequestStreamAroundAsync(targetCFrame.Position)
+        task.wait(0.05)
+        Character.HumanoidRootPart.CFrame = targetCFrame
     end
 end
 
@@ -48,26 +72,6 @@ local function PressKey(key)
     VirtualInputManager:SendKeyEvent(true, key, false, game)
     task.wait(0.05)
     VirtualInputManager:SendKeyEvent(false, key, false, game)
-end
-
--- ฟังก์ชันสแกนหาบอส (แก้ปัญหาหาบอสไม่เจอ)
-local function FindBossModel(bossName)
-    -- 1. หาใน Workspace ตรงๆ (ตามที่เห็นในรูป Dex)
-    local target = workspace:FindFirstChild(bossName)
-    if target and target:FindFirstChild("HumanoidRootPart") then
-        return target
-    end
-    
-    -- 2. หาในโฟลเดอร์ ClientEntities เผื่อกรณีเกมอัปเดตย้ายที่
-    local clientEntities = workspace:FindFirstChild("ClientEntities")
-    if clientEntities then
-        target = clientEntities:FindFirstChild(bossName)
-        if target and target:FindFirstChild("HumanoidRootPart") then
-            return target
-        end
-    end
-    
-    return nil
 end
 
 -- // --- TABS --- //
@@ -79,13 +83,13 @@ local CombatTab = Window:CreateTab("Combat & Skills", 4483362458)
 MainTab:CreateSection("Saved Position")
 
 MainTab:CreateButton({
-   Name = "Save Current Position (เซฟพิกัดก่อนฟาร์ม!!)",
+   Name = "Save Current Position (เซฟพิกัดขากลับ)",
    Callback = function()
        if Character and Character:FindFirstChild("HumanoidRootPart") then
            SavedPosition = Character.HumanoidRootPart.CFrame
            Rayfield:Notify({
               Title = "Position Saved!",
-              Content = "บันทึกพิกัดขากลับเรียบร้อยแล้ว",
+              Content = "บันทึกพิกัดเรียบร้อยแล้ว",
               Duration = 3,
               Image = 4483362458,
            })
@@ -116,27 +120,31 @@ MainTab:CreateToggle({
                while AutoFarmEnabled do
                    local bossFound = false
                    
-                   for displayName, isSelected in pairs(SelectedBosses) do
-                       if isSelected then
-                           local actualModelName = BossNames[displayName]
-                           local bossModel = FindBossModel(actualModelName)
-                           
-                           -- ถ้าเจอตัวบอสและบอสยังมีชีวิตอยู่ (มีเลือด/มีชิ้นส่วนหลัก)
-                           if bossModel and bossModel:FindFirstChild("HumanoidRootPart") then
-                               bossFound = true
-                               -- วาร์ปไปตรงกลางตัวบอส
-                               Teleport(bossModel.HumanoidRootPart.CFrame)
-                               break 
+                   -- ตรวจสอบก่อนว่ามีโฟลเดอร์ ClientEntities ไหม หากระบบยังไม่โหลด ให้ข้ามไปก่อน
+                   if workspace:FindFirstChild("ClientEntities") then
+                       
+                       for displayName, isSelected in pairs(SelectedBosses) do
+                           if isSelected then
+                               local actualModelName = BossNames[displayName]
+                               local bossModel = FindBossInEntities(actualModelName)
+                               
+                               if bossModel then
+                                   bossFound = true
+                                   -- วาร์ปไปตรงกลางตัวบอส พร้อมสั่งโหลดแมพรอบๆ ตัวบอส
+                                   SafeTeleport(bossModel.HumanoidRootPart.CFrame)
+                                   break 
+                               end
                            end
                        end
+                       
                    end
                    
-                   -- ถ้าหาไม่เจอเลย และเราเคยกดเซฟพิกัดไว้ -> วาร์ปกลับจุดเซฟ
+                   -- ถ้าในโฟลเดอร์ ClientEntities ไม่เจอตัวบอสเลย และเซฟพิกัดไว้ -> วาร์ปกลับจุดเซฟ
                    if not bossFound and SavedPosition then
-                       Teleport(SavedPosition)
+                       SafeTeleport(SavedPosition)
                    end
                    
-                   task.wait(0.3) -- ปรับเวลาให้สแกนไวขึ้นเล็กน้อย
+                   task.wait(0.4) -- หน่วงเวลาในการสแกนซ้ำเพื่อความเสถียร
                end
            end)
        end
