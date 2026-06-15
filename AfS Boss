@@ -1,0 +1,368 @@
+-- MonHub | Farm Boss
+-- Wind UI Latest Version
+
+local WindUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Footagesus/WindUI/main/source.lua"))()
+
+-- Services
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+
+local LocalPlayer = Players.LocalPlayer
+
+-- State Variables
+local savedPosition = nil
+local farmingEnabled = false
+local farmThread = nil
+local autoEquipEnabled = false
+local autoEquipThread = nil
+local selectedEquipSlot = nil
+local selectedBosses = {}
+local spacebarLoopEnabled = false
+local spacebarThread = nil
+
+-- Helper: Get Character Parts
+local function getHRP()
+    local char = LocalPlayer.Character
+    if char then
+        return char:FindFirstChild("HumanoidRootPart")
+    end
+end
+
+-- Helper: Teleport
+local function teleportTo(pos)
+    local hrp = getHRP()
+    if hrp then
+        hrp.CFrame = CFrame.new(pos)
+    end
+end
+
+-- Helper: Find Boss Center Position
+local function findBoss(bossKey)
+    local clientEntities = workspace:FindFirstChild("ClientEntities")
+    if not clientEntities then return nil end
+
+    local bossModel = clientEntities:FindFirstChild(bossKey)
+    if not bossModel then return nil end
+
+    local root = bossModel:FindFirstChild("HumanoidRootPart")
+        or bossModel:FindFirstChild("RootPart")
+        or bossModel:FindFirstChildWhichIsA("BasePart")
+
+    if root then
+        return root.Position
+    end
+
+    return nil
+end
+
+-- Boss Config
+local bossKeys = {
+    ["Crocodile"] = "Crocodile",
+    ["Armored Titan"] = "ArmoredTitan",
+    ["Great Ape"] = "GreatApe",
+}
+
+-- Helper: Press Key (VirtualInputManager)
+local function pressKey(keyCode)
+    pcall(function()
+        VirtualInputManager:SendKeyEvent(true, keyCode, false, game)
+        task.wait(0.05)
+        VirtualInputManager:SendKeyEvent(false, keyCode, false, game)
+    end)
+end
+
+-- Helper: Is Holding Tool
+local function isHoldingTool()
+    local char = LocalPlayer.Character
+    if char then
+        return char:FindFirstChildOfClass("Tool") ~= nil
+    end
+    return false
+end
+
+-- Slot Key Map
+local slotKeys = {
+    [1] = Enum.KeyCode.One,
+    [2] = Enum.KeyCode.Two,
+    [3] = Enum.KeyCode.Three,
+    [4] = Enum.KeyCode.Four,
+    [5] = Enum.KeyCode.Five,
+}
+
+-- ========================
+-- Start/Stop Functions
+-- ========================
+
+local function stopFarming()
+    farmingEnabled = false
+    if farmThread then
+        task.cancel(farmThread)
+        farmThread = nil
+    end
+end
+
+local function startFarming()
+    stopFarming()
+    farmingEnabled = true
+    farmThread = task.spawn(function()
+        while farmingEnabled do
+            local bossFound = false
+
+            for bossName, key in pairs(selectedBosses) do
+                if not key then continue end
+                local bossKeyStr = bossKeys[bossName]
+                if not bossKeyStr then continue end
+
+                local pos = findBoss(bossKeyStr)
+                if pos then
+                    teleportTo(pos)
+                    bossFound = true
+                    task.wait(0.3)
+                end
+            end
+
+            if not bossFound then
+                -- No boss found → teleport to saved position
+                if savedPosition then
+                    teleportTo(savedPosition)
+                end
+            end
+
+            task.wait(0.5)
+        end
+    end)
+end
+
+local function stopAutoEquip()
+    autoEquipEnabled = false
+    if autoEquipThread then
+        task.cancel(autoEquipThread)
+        autoEquipThread = nil
+    end
+end
+
+local function startAutoEquip()
+    stopAutoEquip()
+    if not selectedEquipSlot then return end
+    autoEquipEnabled = true
+    autoEquipThread = task.spawn(function()
+        while autoEquipEnabled do
+            if not isHoldingTool() then
+                local keyCode = slotKeys[selectedEquipSlot]
+                if keyCode then
+                    pressKey(keyCode)
+                end
+            end
+            task.wait(0.3)
+        end
+    end)
+end
+
+-- ========================
+-- Wind UI Window
+-- ========================
+
+local Window = WindUI:CreateWindow({
+    Title = "MonHub | Farm Boss",
+    Icon = "swords",
+    Author = "MonHub",
+    Folder = "MonHub",
+    Size = UDim2.fromOffset(600, 480),
+    Transparent = true,
+    Theme = "Dark",
+    Background = true,
+    ACrylic = true,
+    SideBarWidth = 175,
+    HasSideBar = true,
+})
+
+-- ========================
+-- Tabs
+-- ========================
+
+local FarmTab   = Window:Tab({ Title = "Farm Boss",   Icon = "crosshair" })
+local EquipTab  = Window:Tab({ Title = "Auto Equip",  Icon = "backpack"  })
+local UtilTab   = Window:Tab({ Title = "Utilities",   Icon = "settings"  })
+
+-- ========================
+-- Farm Boss Tab
+-- ========================
+
+FarmTab:Button({
+    Title = "💾 Save Position",
+    Description = "บันทึกตำแหน่งปัจจุบันของตัวละคร เพื่อ Teleport กลับเมื่อไม่พบบอส",
+    Callback = function()
+        local hrp = getHRP()
+        if hrp then
+            savedPosition = hrp.Position
+            WindUI:Notify({
+                Title = "✅ Position Saved",
+                Content = string.format("X:%.1f Y:%.1f Z:%.1f", savedPosition.X, savedPosition.Y, savedPosition.Z),
+                Duration = 4,
+                Icon = "map-pin",
+            })
+        else
+            WindUI:Notify({
+                Title = "❌ Error",
+                Content = "ไม่พบ HumanoidRootPart กรุณา Spawn ก่อน",
+                Duration = 3,
+                Icon = "alert-circle",
+            })
+        end
+    end,
+})
+
+FarmTab:Separator({ Title = "Boss Selection" })
+
+FarmTab:Dropdown({
+    Title = "เลือก Boss",
+    Description = "เลือกได้หลายบอสพร้อมกัน",
+    Values = {"Crocodile", "Armored Titan", "Great Ape"},
+    Multi = true,
+    Default = {},
+    Callback = function(selected)
+        selectedBosses = selected
+    end,
+})
+
+FarmTab:Separator({ Title = "Auto Farm" })
+
+FarmTab:Toggle({
+    Title = "🚀 Auto Farm Boss",
+    Description = "Toggle เปิด/ปิด การ Farm บอสอัตโนมัติ",
+    Default = false,
+    Callback = function(state)
+        if state then
+            startFarming()
+            WindUI:Notify({
+                Title = "✅ Auto Farm เปิดแล้ว",
+                Content = "กำลัง Farm บอสที่เลือกไว้",
+                Duration = 3,
+                Icon = "play",
+            })
+        else
+            stopFarming()
+            WindUI:Notify({
+                Title = "⏹ Auto Farm ปิดแล้ว",
+                Content = "หยุด Farm บอส",
+                Duration = 2,
+                Icon = "square",
+            })
+        end
+    end,
+})
+
+-- ========================
+-- Auto Equip Tab
+-- ========================
+
+EquipTab:Dropdown({
+    Title = "เลือก Slot (1-5)",
+    Description = "เลือก Slot ที่ต้องการ Auto Equip (เลือกได้แค่อันเดียว)",
+    Values = {"Slot 1", "Slot 2", "Slot 3", "Slot 4", "Slot 5"},
+    Multi = false,
+    Default = "Slot 1",
+    Callback = function(selected)
+        local num = tonumber(string.match(selected, "%d"))
+        selectedEquipSlot = num
+        -- Restart if already running
+        if autoEquipEnabled then
+            startAutoEquip()
+        end
+    end,
+})
+
+EquipTab:Separator()
+
+EquipTab:Toggle({
+    Title = "🎒 Auto Equip",
+    Description = "กดปุ่ม Slot ที่เลือกวนซ้ำ หากตรวจพบว่าถือของอยู่แล้วจะข้ามไป",
+    Default = false,
+    Callback = function(state)
+        if state then
+            startAutoEquip()
+            WindUI:Notify({
+                Title = "✅ Auto Equip เปิดแล้ว",
+                Content = "Slot: " .. tostring(selectedEquipSlot),
+                Duration = 3,
+                Icon = "check-circle",
+            })
+        else
+            stopAutoEquip()
+            WindUI:Notify({
+                Title = "⏹ Auto Equip ปิดแล้ว",
+                Duration = 2,
+                Icon = "x-circle",
+            })
+        end
+    end,
+})
+
+-- ========================
+-- Utilities Tab
+-- ========================
+
+UtilTab:Separator({ Title = "Spacebar Test" })
+
+UtilTab:Button({
+    Title = "⬜ กด Spacebar ครั้งเดียว",
+    Description = "ทดสอบกด Spacebar 1 ครั้ง",
+    Callback = function()
+        pressKey(Enum.KeyCode.Space)
+        WindUI:Notify({
+            Title = "Space Pressed",
+            Content = "กด Spacebar แล้ว 1 ครั้ง",
+            Duration = 2,
+            Icon = "zap",
+        })
+    end,
+})
+
+UtilTab:Toggle({
+    Title = "🔁 Spacebar Loop",
+    Description = "กด Spacebar วนซ้ำอัตโนมัติทุก 0.5 วินาที",
+    Default = false,
+    Callback = function(state)
+        spacebarLoopEnabled = state
+        if state then
+            spacebarThread = task.spawn(function()
+                while spacebarLoopEnabled do
+                    pressKey(Enum.KeyCode.Space)
+                    task.wait(0.5)
+                end
+            end)
+            WindUI:Notify({
+                Title = "✅ Spacebar Loop เปิดแล้ว",
+                Duration = 2,
+                Icon = "repeat",
+            })
+        else
+            if spacebarThread then
+                task.cancel(spacebarThread)
+                spacebarThread = nil
+            end
+            WindUI:Notify({
+                Title = "⏹ Spacebar Loop ปิดแล้ว",
+                Duration = 2,
+                Icon = "square",
+            })
+        end
+    end,
+})
+
+UtilTab:Separator({ Title = "Info" })
+
+UtilTab:Label({ Title = "MonHub | Farm Boss v1.0" })
+UtilTab:Label({ Title = "Wind UI | Latest Version" })
+
+-- ========================
+-- Notify on Load
+-- ========================
+
+WindUI:Notify({
+    Title = "MonHub | Farm Boss",
+    Content = "โหลดสำเร็จ! เลือกบอสแล้วกด Toggle เพื่อเริ่ม",
+    Duration = 5,
+    Icon = "swords",
+})
