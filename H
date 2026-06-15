@@ -142,7 +142,7 @@ local function isSlotEquipped()
 end
 
 -- ========================
--- Auto Equip Logic
+-- Auto Equip Logic [แก้ไขให้ตรวจสอบแบบ Real-time ตลอดเวลา]
 -- ========================
 local function stopAutoEquip()
     autoEquipEnabled = false
@@ -156,20 +156,23 @@ local function startAutoEquip()
     stopAutoEquip()
     if not selectedSlot then return end
     autoEquipEnabled = true
+    
     autoEquipThread = task.spawn(function()
-        if autoEquipEnabled and not isSlotEquipped() then
-            local kc = slotKeyCode[selectedSlot]
-            if kc then
-                pressKey(kc)
-                task.wait(0.5)
-            end
-        end
         while autoEquipEnabled do
-            task.wait(0.5)
+            -- [แก้ไขตรงจุด] ลูปเช็คทุก ๆ 0.5 วินาที ถ้าวาร์ปไปโซนบอสแล้วของหลุดมือ มันจะกดใส่ใหม่อีกรอบทันที
+            if not isSlotEquipped() then
+                local kc = slotKeyCode[selectedSlot]
+                if kc then
+                    pressKey(kc)
+                    task.wait(0.3) -- หน่วงเวลาสั้น ๆ ให้ตัวละครทำอนิเมชันสวมใส่สำเร็จ
+                end
+            end
+            task.wait(0.5) -- วนลูปตรวจสอบความถูกต้องเรียลไทม์
         end
     end)
 end
 
+-- ดักจับกรณีตัวละครตายแล้วเกิดใหม่
 LocalPlayer.CharacterAdded:Connect(function(char)
     task.wait(1.5)
     if autoEquipEnabled then
@@ -239,7 +242,7 @@ local function updateFarmState()
 end
 
 -- ========================
--- Auto Skill Logic (แบบใหม่รันทีเดียวพร้อมกันทุกสกิลที่ติ๊ก)
+-- Auto Skill Logic
 -- ========================
 local function stopAutoSkill()
     autoSkillEnabled = false
@@ -258,13 +261,11 @@ local function startAutoSkill()
             for keyStr, isSelected in pairs(selectedSkills) do
                 if isSelected and Enum.KeyCode[keyStr] then
                     firedAny = true
-                    -- ปรับแตก Thread ย่อยยิงพร้อมกันกระจายคีย์เวิร์ดแบบเรียลไทม์
                     task.spawn(function()
                         pressKey(Enum.KeyCode[keyStr])
                     end)
                 end
             end
-            -- หน่วงเวลารอบสากล (ปรับเปลี่ยนให้รัวขึ้นได้ตรง 0.3 วินาที)
             if firedAny then
                 task.wait(0.3)
             else
@@ -394,7 +395,7 @@ MainTab:Dropdown({
 
 MainTab:Toggle({
     Title = "Auto Equip",
-    Desc  = "เปิด/ปิด การกดปุ่ม Slot อัตโนมัติ (ใส่รอบเดียวและรันใหม่เมื่อตาย)",
+    Desc  = "เปิด/ปิด การกดปุ่ม Slot อัตโนมัติ (ตรวจสอบและสวมใส่ซ้ำทันทีเมื่อไอเทมหลุดมือ)",
     Icon  = "shield",
     Value = false,
     Callback = function(state)
@@ -409,7 +410,7 @@ MainTab:Toggle({
 })
 
 -- ========================
--- [ปรับปรุงตามขอ] โซน Auto Skill รูปแบบ Multi-Select รวมมิตรในอันเดียว
+-- โซน Auto Skill รูปแบบ Multi-Select รวมมิตรในอันเดียว
 -- ========================
 local alphabet = {"A","B","C","D","E","F","G","H","I","J","K","L","M","N","O","P","Q","R","S","T","U","V","W","X","Y","Z"}
 
@@ -417,10 +418,9 @@ SkillTab:Dropdown({
     Title = "เลือกสกิลที่จะใช้รัว (เลือกพร้อมกันได้หลายปุ่ม)",
     Desc  = "เลือกตัวอักษรเพื่อบรรจุเข้าระบบ Auto Skill",
     Icon  = "keyboard",
-    Multi = true, -- เปิดใช้งานฟังชั่นเลือกพร้อมกันหลายตัวของ Wind UI
+    Multi = true, 
     Values = alphabet,
     Callback = function(selectedList)
-        -- เคลียร์อาเรย์เดิม แล้วลูปจัดเซ็ตค่าคีย์ที่ผู้เล่นกดเปิดใช้งานจริงใหม่ทั้งหมด
         selectedSkills = {}
         if type(selectedList) == "table" then
             for _, k in pairs(selectedList) do
@@ -449,7 +449,7 @@ SkillTab:Toggle({
 })
 
 -- ========================
--- [แก้ไขบัคใหญ่ 100%] ระบบหน้าต่างลอยอัจฉริยะ (Smooth Dragging ไม่ใช้ .Draggable เดิม)
+-- ระบบหน้าต่างลอยอัจฉริยะ (Smooth Dragging ไม่ใช้ .Draggable เดิม)
 -- ========================
 local FloatingGui    = Instance.new("ScreenGui")
 local FloatingButton = Instance.new("TextButton")
@@ -481,7 +481,6 @@ UIStroke.Color = Color3.fromRGB(0, 150, 255)
 UIStroke.Thickness = 2.5
 UIStroke.Parent = FloatingButton
 
--- ฟังก์ชั่นคำนวณการ Drag หน้าต่างลอยขึ้นมาใหม่ด้วยโค้ดเพียว ลากลื่นไหลและไม่พังแน่นอน 100%
 local dragging, dragInput, dragStart, startPos
 local function update(input)
     local delta = input.Position - dragStart
@@ -514,7 +513,6 @@ UserInputService.InputChanged:Connect(function(input)
     end
 end)
 
--- ปุ่มคลิกสลับเมนู
 FloatingButton.MouseButton1Down:Connect(function()
     Window:Toggle()
 end)
@@ -530,10 +528,9 @@ task.spawn(function()
     end
 end)
 
--- ประกาศความสำเร็จระบบหลังประมวลผลผ่านเสร็จสิ้น
 WindUI:Notify({
     Title    = "MonHub Smart Fixed!",
-    Content  = "แก้ไขปุ่มลอย M แข็งแกร่ง และรวมเมนู Auto Skill เป็นกล่องเรียบร้อย!",
+    Content  = "เพิ่มระบบตรวจสอบและสวมใส่ไอเทมซ้ำอัตโนมัติแบบเรียลไทม์เรียบร้อยแล้ว!",
     Duration = 5,
     Icon     = "check",
 })
