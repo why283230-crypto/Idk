@@ -80,95 +80,137 @@ local function teleportTo(pos)
     end
 end
 
--- [BUG FIX 1] Auto Farm: หา Boss Position ด้วย FindFirstChild ตรงๆ
--- ไม่เช็ค Humanoid Health เพราะอาจทำให้ข้ามบอสที่มีอยู่จริง
+-- [BUG FIX 1] Auto Farm: วาปตรงๆ ไปที่ path ที่กำหนด
 local function findBossPosition(bossName)
     local key = bossModelKey[bossName]
     if not key then return nil end
 
-    local ce = workspace:FindFirstChild("ClientEntities")
-    if not ce then return nil end
+    -- วาปตรงไปที่ workspace.ClientEntities.<BossName>
+    local ok, model = pcall(function()
+        return workspace.ClientEntities[key]
+    end)
+    if not ok or not model then return nil end
 
-    local model = ce:FindFirstChild(key)
-    if not model then return nil end
-
-    -- วนหา BasePart ทุก Part ใน Model เพื่อหา Root
+    -- หา HumanoidRootPart หรือ Part แรกที่เจอ
     local root = model:FindFirstChild("HumanoidRootPart")
         or model:FindFirstChild("RootPart")
-
-    -- ถ้าไม่มี HRP/RootPart ให้หา BasePart ตัวแรกที่เจอ
     if not root then
-        for _, part in ipairs(model:GetDescendants()) do
-            if part:IsA("BasePart") then
-                root = part
+        for _, v in ipairs(model:GetDescendants()) do
+            if v:IsA("BasePart") and v.CanCollide then
+                root = v
                 break
+            end
+        end
+        -- ถ้ายังไม่เจอ ลอง BasePart ใดก็ได้
+        if not root then
+            for _, v in ipairs(model:GetDescendants()) do
+                if v:IsA("BasePart") then
+                    root = v
+                    break
+                end
             end
         end
     end
 
-    if root then
-        return root.Position
+    return root and root.Position or nil
+end
+
+-- [BUG FIX 2] Auto Skill: ใช้ keypress แบบ keyboard จริงๆ
+-- ใช้ InputObject simulate แทน SendKeyEvent เพื่อให้ game รับได้
+local function pressKeyOnce(keyCode)
+    -- ลองทั้ง 2 วิธี ให้ได้ผลแน่นอน
+    pcall(function()
+        VirtualInputManager:SendKeyEvent(true, keyCode, false, game)
+    end)
+    task.wait(0.06)
+    pcall(function()
+        VirtualInputManager:SendKeyEvent(false, keyCode, false, game)
+    end)
+end
+
+local function pressKey(keyCode)
+    pressKeyOnce(keyCode)
+end
+
+-- [BUG FIX 3] Auto Equip: ตรวจจับจากสีพื้นหลัง Slot ใน Hotbar
+-- จากรูป: Slot ที่ equipped = พื้นหลังขาว/สว่าง (BackgroundColor3 ใกล้ขาว หรือ ImageTransparency ต่ำ)
+local hotbarSlotNames = {"Strength", "Sword", "Durability", "Chakra"}
+
+local function getHotbarSlot(slotIndex)
+    -- ลอง path ที่เป็นไปได้
+    local ok, hotbar = pcall(function()
+        return LocalPlayer.PlayerGui.Main.HUD.Hotbar
+    end)
+    if not ok or not hotbar then return nil end
+
+    -- ลองหาด้วยชื่อ slot โดยตรง
+    local slotName = hotbarSlotNames[slotIndex]
+    if slotName then
+        local slot = hotbar:FindFirstChild(slotName)
+        if slot then return slot end
+    end
+
+    -- fallback: หาจาก index (children ตาม order)
+    local children = hotbar:GetChildren()
+    -- กรองเฉพาะ GuiObject
+    local guiSlots = {}
+    for _, c in ipairs(children) do
+        if c:IsA("GuiObject") then
+            table.insert(guiSlots, c)
+        end
+    end
+    if guiSlots[slotIndex] then
+        return guiSlots[slotIndex]
     end
 
     return nil
 end
 
--- [BUG FIX 3] Auto Skill: pressKey ใช้ VirtualInputManager แบบถูกต้อง
-local function pressKey(keyCode)
-    pcall(function()
-        VirtualInputManager:SendKeyEvent(true,  keyCode, false, game)
-        task.wait(0.05)
-        VirtualInputManager:SendKeyEvent(false, keyCode, false, game)
-    end)
-end
-
--- [BUG FIX 2] Auto Equip: ตรวจจับจาก PlayerGui Hotbar แทน Tool
--- เช็คว่า Slot ที่เลือกมีของถืออยู่ไหมจาก Hotbar
-local hotbarSlotNames = { "Strength", "Sword", "Durability", "Chakra" }
-
 local function isSlotEquipped()
-    local success, result = pcall(function()
-        local playerGui = LocalPlayer:WaitForChild("PlayerGui", 3)
-        if not playerGui then return false end
+    local ok, result = pcall(function()
+        local slot = getHotbarSlot(selectedSlot or 1)
+        if not slot then return false end
 
-        local main = playerGui:FindFirstChild("Main")
-        if not main then return false end
+        -- [FIX] จากรูป: Slot ที่ equipped มีพื้นหลังสีขาว
+        -- เช็ค BackgroundColor3 ว่าสว่างไหม (R+G+B > 2.5 ≈ ขาว)
+        local bg = slot.BackgroundColor3
+        local brightness = bg.R + bg.G + bg.B
+        if brightness > 2.5 then
+            return true
+        end
 
-        local hud = main:FindFirstChild("HUD")
-        if not hud then return false end
+        -- เช็ค BackgroundTransparency: equipped = ไม่โปร่งใส (< 0.5)
+        if slot.BackgroundTransparency < 0.5 then
+            return true
+        end
 
-        local hotbar = hud:FindFirstChild("Hotbar")
-        if not hotbar then return false end
-
-        -- ตรวจทุก slot ที่รู้จัก ดูว่ามี slot ไหน Equipped อยู่
-        -- โดยเช็ค Visible หรือ property ที่บ่งบอกว่า Active
-        for _, slotName in ipairs(hotbarSlotNames) do
-            local slot = hotbar:FindFirstChild(slotName)
-            if slot then
-                -- เช็คว่า slot นั้น Active/Selected อยู่ไหม
-                -- ลอง BackgroundColor, Selected, Active, หรือ child ที่ชื่อ Selected/Active
-                local selectedFrame = slot:FindFirstChild("Selected")
-                    or slot:FindFirstChild("Active")
-                    or slot:FindFirstChild("Equipped")
-                if selectedFrame and selectedFrame.Visible then
-                    return true
-                end
-                -- fallback: เช็คว่า slot มี ImageLabel/TextLabel ที่แสดงว่า equipped
-                if slot:IsA("GuiObject") then
-                    local bg = slot.BackgroundTransparency
-                    -- ถ้า BackgroundTransparency < 1 = มีของ highlight = equipped
-                    if bg ~= nil and bg < 0.9 then
+        -- เช็ค child ชื่อ "Equipped", "Selected", "Active", "Highlight"
+        for _, child in ipairs(slot:GetChildren()) do
+            local name = child.Name:lower()
+            if (name == "equipped" or name == "selected"
+                or name == "active" or name == "highlight"
+                or name == "outline") then
+                if child:IsA("GuiObject") and child.Visible then
+                    -- เช็คสีของ child ด้วยว่าขาวไหม
+                    if child:IsA("Frame") or child:IsA("ImageLabel") then
+                        local c = child.BackgroundColor3
+                        if (c.R + c.G + c.B) > 2.5 then
+                            return true
+                        end
+                        -- หรือแค่ Visible ก็พอ
                         return true
                     end
+                    return true
                 end
             end
         end
+
         return false
     end)
-    if success then
-        return result
-    end
-    -- ถ้า pcall fail ให้ fallback เช็ค Tool ใน Character แทน
+
+    if ok then return result end
+
+    -- fallback: เช็ค Tool ใน Character
     local char = LocalPlayer.Character
     if char then
         for _, v in ipairs(char:GetChildren()) do
@@ -201,7 +243,6 @@ local function startFarm()
 
                 local pos = findBossPosition(bossName)
                 if pos then
-                    -- [FIX] วาปตรงๆ ไม่มี offset
                     teleportTo(pos)
                     found = true
                     task.wait(0.3)
@@ -222,7 +263,7 @@ local function startFarm()
 end
 
 -- ========================
--- Auto Equip Logic [BUG FIX 2]
+-- Auto Equip Logic [BUG FIX 3]
 -- ========================
 local function stopAutoEquip()
     autoEquipEnabled = false
@@ -238,7 +279,6 @@ local function startAutoEquip()
     autoEquipEnabled = true
     autoEquipThread = task.spawn(function()
         while autoEquipEnabled do
-            -- [FIX] ใช้ isSlotEquipped() จาก Hotbar PlayerGui
             if not isSlotEquipped() then
                 local kc = slotKeyCode[selectedSlot]
                 if kc then
@@ -253,7 +293,7 @@ local function startAutoEquip()
 end
 
 -- ========================
--- Auto Skill Logic [BUG FIX 3]
+-- Auto Skill Logic [BUG FIX 2]
 -- ========================
 local function stopAutoSkill()
     autoSkillEnabled = false
@@ -273,16 +313,16 @@ local function startAutoSkill()
                 if not active then continue end
                 local kc = letterKeyCode[letter]
                 if kc then
-                    -- [FIX] กด Key แบบ Down/Up ชัดเจน แยก pcall ต่อ key
+                    -- [FIX] กดแบบ keyboard จริงๆ Down แล้ว Up
                     pcall(function()
-                        VirtualInputManager:SendKeyEvent(true,  kc, false, game)
+                        VirtualInputManager:SendKeyEvent(true, kc, false, game)
                     end)
-                    task.wait(0.05)
+                    task.wait(0.06)
                     pcall(function()
                         VirtualInputManager:SendKeyEvent(false, kc, false, game)
                     end)
+                    task.wait(0.06)
                     hasKey = true
-                    task.wait(0.05)
                 end
             end
             if not hasKey then
@@ -304,7 +344,6 @@ local Window = WindUI:CreateWindow({
     Theme       = "Dark",
     Acrylic     = true,
     Transparent = true,
-    -- [BUG FIX 4] ปุ่มลอยเปิด UI ใหม่ได้เมื่อกด Toggle
     ToggleKey   = Enum.KeyCode.RightControl,
 })
 
@@ -392,7 +431,7 @@ local EquipTab = Window:Tab({
 
 EquipTab:Dropdown({
     Title  = "เลือก Slot ที่จะ Equip",
-    Desc   = "กดปุ่มตัวเลขนั้นซ้ำๆ ตรวจจับจาก Hotbar PlayerGui",
+    Desc   = "ตรวจจับจากสีพื้นหลัง Slot (ขาว = equipped)",
     Icon   = "hash",
     Values = { "Slot 1", "Slot 2", "Slot 3", "Slot 4", "Slot 5" },
     Value  = "Slot 1",
@@ -409,7 +448,7 @@ EquipTab:Divider()
 
 EquipTab:Toggle({
     Title = "Auto Equip",
-    Desc  = "เปิด/ปิด การกดปุ่ม Slot อัตโนมัติ (ตรวจจับจาก Hotbar)",
+    Desc  = "เปิด/ปิด การกดปุ่ม Slot อัตโนมัติ (ตรวจจับสีขาว = equipped)",
     Icon  = "shield",
     Value = false,
     Callback = function(state)
@@ -545,7 +584,6 @@ UtilTab:Toggle({
 
 UtilTab:Divider()
 
--- [BUG FIX 4] ปุ่มข้อมูล Toggle Key
 UtilTab:Button({
     Title = "วิธีเปิด UI ใหม่",
     Desc  = "กด RightControl (Right Ctrl) เพื่อเปิด/ปิด UI",
