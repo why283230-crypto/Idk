@@ -1,4 +1,4 @@
--- MonHub | Farm Boss Simple Edition
+-- MonHub | Farm Boss Simple Edition (Toggle Loop Edition)
 -- Wind UI Latest
 local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
 
@@ -7,7 +7,7 @@ local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/rel
 -- ========================
 local Players             = game:GetService("Players")
 local UserInputService    = game:GetService("UserInputService")
-local VirtualInputManager = game:GetService("VirtualInputManager") -- เพิ่มไว้รองรับระบบหน้าต่างลอยอัจฉริยะชิ้นใหม่
+local VirtualInputManager = game:GetService("VirtualInputManager") 
 local LocalPlayer         = Players.LocalPlayer
 
 -- ========================
@@ -15,8 +15,14 @@ local LocalPlayer         = Players.LocalPlayer
 -- ========================
 local farmingEnabled = false
 local farmThread     = nil
-local selectedBosses = {} -- ปรับปรุง: รองรับการเก็บรายชื่อบอสหลายตัวพร้อมกัน
 local uiVisible      = true
+
+-- ปรับปรุง State: ใช้เก็บค่าเปิด/ปิดจาก Toggle ของบอสแต่ละตัวโดยตรง
+local targetBosses = {
+    ["Great Ape"]     = false,
+    ["Armored Titan"] = false,
+    ["Crocodile"]     = false
+}
 
 -- [STATE เพิ่มเติม] ระบบบันทึกตำแหน่งพิกัดกลับอัจฉริยะแบบแยกอิสระ
 local savedPosition     = nil
@@ -25,10 +31,10 @@ local useSavePosEnabled = false
 -- [STATE เพิ่มใหม่] ระบบ Auto Equip
 local autoEquipEnabled = false
 local autoEquipThread  = nil
-local selectedSlot     = 1 -- เริ่มต้นที่สล็อต 1 ตามค่าเริ่มต้นของ Dropdown
+local selectedSlot     = 1 
 
 -- ========================
--- Maps & Configurations
+-- Boss Configuration
 -- ========================
 local bossPaths = {
     ["Great Ape"]     = "GreatApe",
@@ -62,7 +68,7 @@ local function pressKey(keyCode)
     end)
 end
 
--- ฟังก์ชันหาตำแหน่งบอสใน ClientEntities ตรงๆ ตามที่คุณระบุ
+-- ฟังก์ชันหาตำแหน่งบอสใน ClientEntities 
 local function getBossPosition(bossName)
     local folderName = bossPaths[bossName]
     if not folderName then return nil end
@@ -73,7 +79,6 @@ local function getBossPosition(bossName)
     local bossModel = clientEntities:FindFirstChild(folderName)
     if not bossModel then return nil end
 
-    -- หาพิกัดจากชิ้นส่วนในตัวบอส
     local root = bossModel:FindFirstChild("HumanoidRootPart") 
         or bossModel:FindFirstChild("RootPart") 
         or bossModel.PrimaryPart
@@ -90,7 +95,7 @@ local function getBossPosition(bossName)
     return root and root.Position
 end
 
--- เช็คว่า Slot มีของถืออยู่ไหม ดึงมาจากโค้ด Auto Equip ของคุณ 100%
+-- เช็คว่า Slot มีของถืออยู่ไหม (คงเดิมไว้ 100%)
 local function isSlotEquipped()
     local success, result = pcall(function()
         local playerGui = LocalPlayer:WaitForChild("PlayerGui", 3)
@@ -127,7 +132,6 @@ local function isSlotEquipped()
     if success then
         return result
     end
-    -- Fallback เช็ค Tool ใน Character
     local char = LocalPlayer.Character
     if char then
         for _, v in ipairs(char:GetChildren()) do
@@ -138,7 +142,7 @@ local function isSlotEquipped()
 end
 
 -- ========================
--- Auto Equip Logic (ปรับปรุงให้กดรอบเดียว และสแตนด์บายรอเกิดใหม่)
+-- Auto Equip Logic (คงเดิมไว้ 100%)
 -- ========================
 local function stopAutoEquip()
     autoEquipEnabled = false
@@ -153,7 +157,6 @@ local function startAutoEquip()
     if not selectedSlot then return end
     autoEquipEnabled = true
     autoEquipThread = task.spawn(function()
-        -- รันรอบแรกเพื่อตรวจสอบและกดใส่เพียงรอบเดียวเมื่อเลือกหรือเปิดใช้งาน
         if autoEquipEnabled and not isSlotEquipped() then
             local kc = slotKeyCode[selectedSlot]
             if kc then
@@ -161,70 +164,78 @@ local function startAutoEquip()
                 task.wait(0.5)
             end
         end
-        
-        -- เข้าสู่โหมดสแตนด์บายคอยตรวจจับสถานะ (ไม่กดซ้ำรัวๆ)
         while autoEquipEnabled do
             task.wait(0.5)
         end
     end)
 end
 
--- ระบบตรวจจับเมื่อตัวละครตายแล้วเกิดใหม่ ให้ทำการรัน Auto Equip ใหม่อีกรอบทันที
 LocalPlayer.CharacterAdded:Connect(function(char)
-    task.wait(1.5) -- รอให้ตัวละครและ UI โหลดเสร็จหลังเกิดใหม่สักครู่
+    task.wait(1.5)
     if autoEquipEnabled then
         if not isSlotEquipped() then
             local kc = slotKeyCode[selectedSlot]
-            if kc then
-                pressKey(kc)
-            end
+            if kc then pressKey(kc) end
         end
     end
 end)
 
 -- ========================
--- Farm Logic
+-- ปรับปรุง: Farm Logic แบบตรวจสอบจาก Toggle รายตัว
 -- ========================
-local function stopFarm()
-    farmingEnabled = false
-    if farmThread then
-        task.cancel(farmThread)
-        farmThread = nil
+local function updateFarmState()
+    -- ตรวจสอบว่ามีการเปิดบอสทิ้งไว้户外อย่างน้อย 1 ตัวหรือไม่
+    local anyBossEnabled = false
+    for _, enabled in pairs(targetBosses) do
+        if enabled then
+            anyBossEnabled = true
+            break
+        end
     end
-end
 
-local function startFarm()
-    stopFarm()
-    
+    if not anyBossEnabled then
+        farmingEnabled = false
+        if farmThread then
+            task.cancel(farmThread)
+            farmThread = nil
+        end
+        return
+    end
+
+    if farmingEnabled then return end
     farmingEnabled = true
+
     farmThread = task.spawn(function()
         while farmingEnabled do
             local hasTarget = false
-            
-            -- ปรับปรุง: วนลูปสแกนบอสทุกตัวที่ถูกเลือกพร้อมกันในลิสต์
-            for bossName, enabled in pairs(selectedBosses) do
+            local activeBossCount = 0
+
+            -- วนลูปสแกนเฉพาะบอสตัวที่เปิด Toggle ไว้
+            for bossName, enabled in pairs(targetBosses) do
                 if not enabled then continue end
-                
+                activeBossCount = activeBossCount + 1
+
                 local hrp = getHRP()
                 local bossPos = getBossPosition(bossName)
 
                 if hrp and bossPos then
-                    -- วาร์ปไปพิกัดบอสโดยตรง
                     hrp.CFrame = CFrame.new(bossPos)
                     hasTarget = true
-                    task.wait(0.2) -- ความเร็วในการตรวจสอบและวาร์ปซ้ำ
+                    task.wait(0.2) -- ความเร็วในการวาร์ปตีบอสตัวนั้นๆ
                 end
             end
-            
-            -- เงื่อนไขระบบ Save Position: จะวาร์ปกลับจุดเซฟเมื่อเปิด Auto Boss อยู่และไม่เจอบอสตัวไหนเลย
-            if not hasTarget then
+
+            -- เงื่อนไขระบบ Save Position แบบใหม่: หากเปิดบอสอยู่แต่หาไม่เจอ และเปิด Use Save Position ไว้ จะดึงกลับจุดเซฟ
+            if not hasTarget and activeBossCount > 0 then
                 if useSavePosEnabled and savedPosition then
                     local hrp = getHRP()
                     if hrp then
                         hrp.CFrame = CFrame.new(savedPosition)
                     end
                 end
-                task.wait(0.3) -- รอตรวจสอบบอสในรอบถัดไป (ถ้าปิดฟาร์มอยู่ระบบจะไม่ทำงานตรงนี้ ทำให้เดินได้ปกติ)
+                task.wait(0.3)
+            else
+                task.wait(0.1)
             end
         end
     end)
@@ -238,7 +249,7 @@ local Window = WindUI:CreateWindow({
     Icon        = "swords",
     Author      = "MonHub",
     Folder      = "MonHubSimple",
-    Size        = UDim2.fromOffset(450, 480), -- ปรับขนาดขยายลงมาเล็กน้อยเพื่อความสวยงาม
+    Size        = UDim2.fromOffset(450, 520), -- ขยายขนาดตั้งต้นเพื่อรองรับหน้าต่าง Toggle บอสแบบใหม่
     Theme       = "Dark",
     Acrylic     = true,
     Transparent = true,
@@ -250,42 +261,45 @@ local MainTab = Window:Tab({
     Icon  = "crosshair",
 })
 
--- ปรับปรุง: เปลี่ยนเป็น Dropdown แบบ Multi สามารถติ๊กเลือกได้หลายตัวพร้อมกัน
-MainTab:Dropdown({
-    Title     = "เลือกบอสที่ต้องการตี (เลือกได้หลายตัว)",
-    Desc      = "จะแสกนไปที่ workspace.ClientEntities",
-    Icon      = "list",
-    Values    = { "Great Ape", "Armored Titan", "Crocodile" },
-    Multi     = true,
-    AllowNone = true,
-    Callback  = function(selected)
-        selectedBosses = selected
-        -- ถ้าเปิดฟาร์มอยู่แล้วให้เริ่มทำงานใหม่ทันทีที่เปลี่ยนการเลือกบอส
-        if farmingEnabled then
-            startFarm()
-        end
+-- ========================
+-- ปรับเปลี่ยนใหม่: โซนปุ่มพิกัด Toggle ลูปบอสรายตัว
+-- ========================
+MainTab:Toggle({
+    Title = "Auto บอสลิง",
+    Desc  = "วาร์ปฟาร์ม Great Ape อัตโนมัติเมื่อเกิด",
+    Icon  = "zap",
+    Value = false,
+    Callback = function(state)
+        targetBosses["Great Ape"] = state
+        updateFarmState()
     end,
 })
 
 MainTab:Toggle({
-    Title = "Auto Farm Boss",
-    Desc  = "เปิดระบบวาร์ปไปล็อกตัวบอสที่เลือกไว้ทั้งหมดแบบวนลูป",
+    Title = "Auto บอสไททัน",
+    Desc  = "วาร์ปฟาร์ม Armored Titan อัตโนมัติเมื่อเกิด",
     Icon  = "zap",
     Value = false,
     Callback = function(state)
-        if state then
-            startFarm()
-            WindUI:Notify({ Title = "เปิดฟาร์มสำเร็จ", Content = "กำลังเริ่มระบบฟาร์มบอสแบบวนลูป", Duration = 3, Icon = "play" })
-        else
-            stopFarm()
-            WindUI:Notify({ Title = "ปิดฟาร์มสำเร็จ", Duration = 2, Icon = "square" })
-        end
+        targetBosses["Armored Titan"] = state
+        updateFarmState()
+    end,
+})
+
+MainTab:Toggle({
+    Title = "Auto บอสครอกโคดายส์",
+    Desc  = "วาร์ปฟาร์ม Crocodile อัตโนมัติเมื่อเกิด",
+    Icon  = "zap",
+    Value = false,
+    Callback = function(state)
+        targetBosses["Crocodile"] = state
+        updateFarmState()
     end,
 })
 
 MainTab:Divider()
 
--- [เพิ่มใหม่] ระบบ Save Position แบบเปิด/ปิดอิสระตามเงื่อนไขที่คุณระบุ
+-- ระบบ Save Position (คงเดิมตามเงื่อนไขที่คุณสั่งเป๊ะๆ)
 MainTab:Button({
     Title = "Save Position (กดเพื่อเซฟจุดปัจจุบัน)",
     Desc  = "บันทึกพิกัดยืนปัจจุบันของคุณ เพื่อให้ตัวละครวาร์ปกลับมาเมื่อบอสไม่เกิด",
@@ -308,7 +322,7 @@ MainTab:Button({
 
 MainTab:Toggle({
     Title = "Use Save Position (วาร์ปกลับเมื่อบอสไม่เกิด)",
-    Desc  = "เดินได้ปกติเมื่อเปิดแค่อันเดียว ระบบจะดึงตัวกลับก็ต่อเมื่อเปิดฟาร์มแล้วไม่เจอบอส",
+    Desc  = "เดินได้ปกติเมื่อเปิดแค่อันเดียว ระบบจะดึงตัวกลับก็ต่อเมื่อเปิดบอสตัวใดตัวหนึ่งแล้วไม่เจอ",
     Icon  = "refresh-cw",
     Value = false,
     Callback = function(state)
@@ -327,7 +341,7 @@ MainTab:Toggle({
 
 MainTab:Divider()
 
--- [เพิ่มใหม่] ส่วนควบคุมระบบสล็อตไอเทม (Auto Equip) ในหน้าต่างหลักตามรูปแบบเดิมทั้งหมด
+-- ส่วนควบคุมระบบสล็อตไอเทม (Auto Equip) (คงเดิมไว้ 100%)
 MainTab:Dropdown({
     Title  = "เลือก Slot ที่จะ Equip",
     Desc   = "กดปุ่มตัวเลขนั้นซ้ำๆ ตรวจจับจาก Hotbar PlayerGui",
@@ -369,7 +383,7 @@ MainTab:Toggle({
 })
 
 -- ========================
--- ระบบหน้าต่างลอยอัจฉริยะ (Floating Window Toggle) เปลี่ยนเป็นตัวใหม่ตามสั่ง
+-- ระบบหน้าต่างลอยอัจฉริยะ (Floating Window Toggle) (คงเดิมไว้ 100%)
 -- ========================
 local FloatingGui    = Instance.new("ScreenGui")
 local FloatingButton = Instance.new("TextButton")
@@ -391,7 +405,7 @@ FloatingButton.Font = Enum.Font.GothamBold
 FloatingButton.TextSize = 24
 FloatingButton.Active = true
 FloatingButton.Draggable = true 
-FloatingButton.Visible = false -- เริ่มแรกตอนเปิด UI จะซ่อนปุ่มลอยไว้
+FloatingButton.Visible = false 
 
 UICorner.CornerRadius = UDim.new(0, 14)
 UICorner.Parent = FloatingButton
@@ -407,11 +421,9 @@ local function toggleUI()
         task.wait(0.01)
         VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.RightControl, false, game)
     end)
-    -- ปุ่มลอยจะแสดงผลเมื่อหน้าหลักยุบตัวลงเท่านั้น
     FloatingButton.Visible = not uiVisible
 end
 
--- ล็อกการเปิดปิดเมื่อกดผ่าน RightControl บนบอร์ดจริง
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if not gameProcessed and input.KeyCode == Enum.KeyCode.RightControl then
         uiVisible = not uiVisible
@@ -426,7 +438,7 @@ end)
 -- แจ้งเตือนเมื่อโหลดเสร็จ
 WindUI:Notify({
     Title    = "MonHub Simple Loaded",
-    Content  = "ระบบฟาร์มบอส & Auto Equip อัจฉริยะ (รันเมื่อเกิดใหม่) พร้อมใช้งานแล้ว!",
+    Content  = "ระบบรูปแบบใหม่ (Toggle บอสรายตัว) และ Auto Equip พร้อมใช้งานแล้ว!",
     Duration = 5,
     Icon     = "swords",
 })
