@@ -22,8 +22,13 @@ local uiVisible      = true
 local savedPosition     = nil
 local useSavePosEnabled = false 
 
+-- [STATE เพิ่มใหม่] ระบบ Auto Equip
+local autoEquipEnabled = false
+local autoEquipThread  = nil
+local selectedSlot     = 1 -- เริ่มต้นที่สล็อต 1 ตามค่าเริ่มต้นของ Dropdown
+
 -- ========================
--- Boss Configuration
+-- Maps & Configurations
 -- ========================
 local bossPaths = {
     ["Great Ape"]     = "GreatApe",
@@ -31,12 +36,30 @@ local bossPaths = {
     ["Crocodile"]     = "Crocodile",
 }
 
+local slotKeyCode = {
+    [1] = Enum.KeyCode.One,
+    [2] = Enum.KeyCode.Two,
+    [3] = Enum.KeyCode.Three,
+    [4] = Enum.KeyCode.Four,
+    [5] = Enum.KeyCode.Five,
+}
+
+local hotbarSlotNames = { "Strength", "Sword", "Durability", "Chakra" }
+
 -- ========================
 -- Helpers
 -- ========================
 local function getHRP()
     local char = LocalPlayer.Character
     return char and char:FindFirstChild("HumanoidRootPart")
+end
+
+local function pressKey(keyCode)
+    pcall(function()
+        VirtualInputManager:SendKeyEvent(true,  keyCode, false, game)
+        task.wait(0.05)
+        VirtualInputManager:SendKeyEvent(false, keyCode, false, game)
+    end)
 end
 
 -- ฟังก์ชันหาตำแหน่งบอสใน ClientEntities ตรงๆ ตามที่คุณระบุ
@@ -66,6 +89,98 @@ local function getBossPosition(bossName)
 
     return root and root.Position
 end
+
+-- เช็คว่า Slot มีของถืออยู่ไหม ดึงมาจากโค้ด Auto Equip ของคุณ 100%
+local function isSlotEquipped()
+    local success, result = pcall(function()
+        local playerGui = LocalPlayer:WaitForChild("PlayerGui", 3)
+        if not playerGui then return false end
+
+        local main = playerGui:FindFirstChild("Main")
+        if not main then return false end
+
+        local hud = main:FindFirstChild("HUD")
+        if not hud then return false end
+
+        local hotbar = hud:FindFirstChild("Hotbar")
+        if not hotbar then return false end
+
+        for _, slotName in ipairs(hotbarSlotNames) do
+            local slot = hotbar:FindFirstChild(slotName)
+            if slot then
+                local selectedFrame = slot:FindFirstChild("Selected")
+                    or slot:FindFirstChild("Active")
+                    or slot:FindFirstChild("Equipped")
+                if selectedFrame and selectedFrame.Visible then
+                    return true
+                end
+                if slot:IsA("GuiObject") then
+                    local bg = slot.BackgroundTransparency
+                    if bg ~= nil and bg < 0.9 then
+                        return true
+                    end
+                end
+            end
+        end
+        return false
+    end)
+    if success then
+        return result
+    end
+    -- Fallback เช็ค Tool ใน Character
+    local char = LocalPlayer.Character
+    if char then
+        for _, v in ipairs(char:GetChildren()) do
+            if v:IsA("Tool") then return true end
+        end
+    end
+    return false
+end
+
+-- ========================
+-- Auto Equip Logic (ปรับปรุงให้กดรอบเดียว และสแตนด์บายรอเกิดใหม่)
+-- ========================
+local function stopAutoEquip()
+    autoEquipEnabled = false
+    if autoEquipThread then
+        task.cancel(autoEquipThread)
+        autoEquipThread = nil
+    end
+end
+
+local function startAutoEquip()
+    stopAutoEquip()
+    if not selectedSlot then return end
+    autoEquipEnabled = true
+    autoEquipThread = task.spawn(function()
+        -- รันรอบแรกเพื่อตรวจสอบและกดใส่เพียงรอบเดียวเมื่อเลือกหรือเปิดใช้งาน
+        if autoEquipEnabled and not isSlotEquipped() then
+            local kc = slotKeyCode[selectedSlot]
+            if kc then
+                pressKey(kc)
+                task.wait(0.5)
+            end
+        end
+        
+        -- เข้าสู่โหมดสแตนด์บายคอยตรวจจับสถานะ (ไม่กดซ้ำรัวๆ)
+        while autoEquipEnabled do
+            task.wait(0.5)
+        end
+    end)
+end
+
+-- ระบบตรวจจับเมื่อตัวละครตายแล้วเกิดใหม่ ให้ทำการรัน Auto Equip ใหม่อีกรอบทันที
+LocalPlayer.CharacterAdded:Connect(function(char)
+    task.wait(1.5) -- รอให้ตัวละครและ UI โหลดเสร็จหลังเกิดใหม่สักครู่
+    if autoEquipEnabled then
+        if not isSlotEquipped() then
+            local kc = slotKeyCode[selectedSlot]
+            if kc then
+                pressKey(kc)
+            end
+        end
+    end
+end)
 
 -- ========================
 -- Farm Logic
@@ -123,7 +238,7 @@ local Window = WindUI:CreateWindow({
     Icon        = "swords",
     Author      = "MonHub",
     Folder      = "MonHubSimple",
-    Size        = UDim2.fromOffset(450, 420), -- ปรับขนาดเล็กน้อยเพื่อรองรับปุ่มเซฟพิกัดใหม่
+    Size        = UDim2.fromOffset(450, 480), -- ปรับขนาดขยายลงมาเล็กน้อยเพื่อความสวยงาม
     Theme       = "Dark",
     Acrylic     = true,
     Transparent = true,
@@ -210,6 +325,49 @@ MainTab:Toggle({
     end,
 })
 
+MainTab:Divider()
+
+-- [เพิ่มใหม่] ส่วนควบคุมระบบสล็อตไอเทม (Auto Equip) ในหน้าต่างหลักตามรูปแบบเดิมทั้งหมด
+MainTab:Dropdown({
+    Title  = "เลือก Slot ที่จะ Equip",
+    Desc   = "กดปุ่มตัวเลขนั้นซ้ำๆ ตรวจจับจาก Hotbar PlayerGui",
+    Icon   = "hash",
+    Values = { "Slot 1", "Slot 2", "Slot 3", "Slot 4", "Slot 5" },
+    Value  = "Slot 1",
+    Callback = function(selected)
+        local num = tonumber(selected:match("%d"))
+        selectedSlot = num
+        if autoEquipEnabled then
+            startAutoEquip()
+        end
+    end,
+})
+
+MainTab:Toggle({
+    Title = "Auto Equip",
+    Desc  = "เปิด/ปิด การกดปุ่ม Slot อัตโนมัติ (ใส่รอบเดียวและรันใหม่เมื่อตาย)",
+    Icon  = "shield",
+    Value = false,
+    Callback = function(state)
+        if state then
+            startAutoEquip()
+            WindUI:Notify({
+                Title    = "Auto Equip เปิดแล้ว",
+                Content  = "Slot: " .. tostring(selectedSlot or "?"),
+                Duration = 3,
+                Icon     = "check-circle",
+            })
+        else
+            stopAutoEquip()
+            WindUI:Notify({
+                Title    = "Auto Equip ปิดแล้ว",
+                Duration = 2,
+                Icon     = "x-circle",
+            })
+        end
+    end,
+})
+
 -- ========================
 -- ระบบหน้าต่างลอยอัจฉริยะ (Floating Window Toggle) เปลี่ยนเป็นตัวใหม่ตามสั่ง
 -- ========================
@@ -268,7 +426,7 @@ end)
 -- แจ้งเตือนเมื่อโหลดเสร็จ
 WindUI:Notify({
     Title    = "MonHub Simple Loaded",
-    Content  = "กด RightCtrl หรือปุ่มลอย 'M' เพื่อแสดงผล UI",
+    Content  = "ระบบฟาร์มบอส & Auto Equip อัจฉริยะ (รันเมื่อเกิดใหม่) พร้อมใช้งานแล้ว!",
     Duration = 5,
     Icon     = "swords",
 })
