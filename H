@@ -1,0 +1,216 @@
+-- MonHub | Farm Boss Simple Edition
+-- Wind UI Latest
+local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
+
+-- ========================
+-- Services
+-- ========================
+local Players             = game:GetService("Players")
+local UserInputService    = game:GetService("UserInputService")
+local LocalPlayer         = Players.LocalPlayer
+
+-- ========================
+-- State
+-- ========================
+local farmingEnabled = false
+local farmThread     = nil
+local selectedBoss   = nil -- เลือกบอสทีละตัวเพื่อความแม่นยำในการฟาร์ม
+local uiVisible      = true
+
+-- ========================
+-- Boss Configuration
+-- ========================
+local bossPaths = {
+    ["Great Ape"]     = "GreatApe",
+    ["Armored Titan"] = "ArmoredTitan",
+    ["Crocodile"]     = "Crocodile",
+}
+
+-- ========================
+-- Helpers
+-- ========================
+local function getHRP()
+    local char = LocalPlayer.Character
+    return char and char:FindFirstChild("HumanoidRootPart")
+end
+
+-- ฟังก์ชันหาตำแหน่งบอสใน ClientEntities ตรงๆ ตามที่คุณระบุ
+local function getBossPosition(bossName)
+    local folderName = bossPaths[bossName]
+    if not folderName then return nil end
+
+    local clientEntities = workspace:FindFirstChild("ClientEntities")
+    if not clientEntities then return nil end
+
+    local bossModel = clientEntities:FindFirstChild(folderName)
+    if not bossModel then return nil end
+
+    -- หาพิกัดจากชิ้นส่วนในตัวบอส
+    local root = bossModel:FindFirstChild("HumanoidRootPart") 
+        or bossModel:FindFirstChild("RootPart") 
+        or bossModel.PrimaryPart
+
+    if not root then
+        for _, part in ipairs(bossModel:GetDescendants()) do
+            if part:IsA("BasePart") then
+                root = part
+                break
+            end
+        end
+    end
+
+    return root and root.Position
+end
+
+-- ========================
+-- Farm Logic
+-- ========================
+local function stopFarm()
+    farmingEnabled = false
+    if farmThread then
+        task.cancel(farmThread)
+        farmThread = nil
+    end
+end
+
+local function startFarm()
+    stopFarm()
+    if not selectedBoss then return end
+    
+    farmingEnabled = true
+    farmThread = task.spawn(function()
+        while farmingEnabled do
+            local hrp = getHRP()
+            local bossPos = getBossPosition(selectedBoss)
+
+            if hrp and bossPos then
+                -- วาร์ปไปพิกัดบอสโดยตรง
+                hrp.CFrame = CFrame.new(bossPos)
+            end
+            task.wait(0.2) -- ความเร็วในการตรวจสอบและวาร์ปซ้ำ
+        end
+    end)
+end
+
+-- ========================
+-- Window Setup
+-- ========================
+local Window = WindUI:CreateWindow({
+    Title       = "MonHub | Simple Farm",
+    Icon        = "swords",
+    Author      = "MonHub",
+    Folder      = "MonHubSimple",
+    Size        = UDim2.fromOffset(450, 350), -- ปรับขนาดให้กระชับ เข้าใจง่าย
+    Theme       = "Dark",
+    Acrylic     = true,
+    Transparent = true,
+    ToggleKey   = Enum.KeyCode.RightControl,
+})
+
+local MainTab = Window:Tab({
+    Title = "Main Farm",
+    Icon  = "crosshair",
+})
+
+-- Dropdown เลือกบอส 3 ตัวตามโฟลเดอร์จริง
+MainTab:Dropdown({
+    Title     = "เลือกบอสที่ต้องการตี",
+    Desc      = "จะแสกนไปที่ workspace.ClientEntities",
+    Icon      = "list",
+    Values    = { "Great Ape", "Armored Titan", "Crocodile" },
+    Value     = "Great Ape",
+    Callback  = function(selected)
+        selectedBoss = selected
+        -- ถ้าเปิดฟาร์มอยู่แล้วให้เริ่มทำงานใหม่ทันทีที่เปลี่ยนบอส
+        if farmingEnabled then
+            startFarm()
+        end
+    end,
+})
+
+MainTab:Divider()
+
+-- ปุ่มเปิด/ปิดการวาร์ป
+MainTab:Toggle({
+    Title = "Auto Farm Boss",
+    Desc  = "เปิดระบบวาร์ปไปล็อกตัวบอสที่เลือกไว้",
+    Icon  = "zap",
+    Value = false,
+    Callback = function(state)
+        if state then
+            if selectedBoss then
+                startFarm()
+                WindUI:Notify({ Title = "เปิดฟาร์มสำเร็จ", Content = "กำลังวาร์ปไปหา " .. selectedBoss, Duration = 3, Icon = "play" })
+            else
+                WindUI:Notify({ Title = "ข้อผิดพลาด", Content = "กรุณาเลือกบอสก่อนเปิดใช้งาน", Duration = 3, Icon = "alert-circle" })
+            end
+        else
+            stopFarm()
+            WindUI:Notify({ Title = "ปิดฟาร์มสำเร็จ", Duration = 2, Icon = "square" })
+        end
+    end,
+})
+
+-- ========================
+-- ระบบหน้าต่างลอย (Floating Toggle Button) 
+-- ========================
+local FloatingGui = Instance.new("ScreenGui")
+local FloatingButton = Instance.new("TextButton")
+local UICorner = Instance.new("UICorner")
+local UIStroke = Instance.new("UIStroke")
+
+FloatingGui.Name = "MonHubFloatingSimple"
+FloatingGui.Parent = (game:GetService("CoreGui") or LocalPlayer:WaitForChild("PlayerGui"))
+FloatingGui.ResetOnSpawn = false
+
+FloatingButton.Name = "ToggleButton"
+FloatingButton.Parent = FloatingGui
+FloatingButton.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
+FloatingButton.Position = UDim2.new(0.05, 0, 0.2, 0)
+FloatingButton.Size = UDim2.fromOffset(50, 50)
+FloatingButton.Text = "M"
+FloatingButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+FloatingButton.Font = Enum.Font.GothamBold
+FloatingButton.TextSize = 22
+FloatingButton.Active = true
+FloatingButton.Draggable = true -- กดลากเลื่อนตำแหน่งบนจอได้อิสระจริงๆ
+FloatingButton.Visible = false 
+
+UICorner.CornerRadius = UDim.new(0, 12)
+UICorner.Parent = FloatingButton
+
+UIStroke.Color = Color3.fromRGB(0, 120, 255)
+UIStroke.Thickness = 2
+UIStroke.Parent = FloatingButton
+
+-- ฟังก์ชันเปิด-ปิดสลับกัน
+local function toggleUI()
+    uiVisible = not uiVisible
+    -- จำลองการกดปุ่มหลักของ WindUI เพื่อสลับเปิด/ปิดหน้าต่าง
+    pcall(function()
+        VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.RightControl, false, game)
+        task.wait(0.01)
+        VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.RightControl, false, game)
+    end)
+    FloatingButton.Visible = not uiVisible
+end
+
+-- ตรวจสอบคีย์บอร์ดจริง
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if not gameProcessed and input.KeyCode == Enum.KeyCode.RightControl then
+        uiVisible = not uiVisible
+        FloatingButton.Visible = not uiVisible
+    end
+end)
+
+FloatingButton.MouseButton1Click:Connect(function()
+    toggleUI()
+end)
+
+-- แจ้งเตือนเมื่อโหลดเสร็จ
+WindUI:Notify({
+    Title    = "MonHub Simple Loaded",
+    Content  = "กด RightCtrl หรือปุ่มลอย 'M' เพื่อแสดงผล UI",
+    Duration = 5,
+    Icon     = "swords",
+})
