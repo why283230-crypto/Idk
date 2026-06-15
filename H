@@ -32,6 +32,18 @@ local autoEquipEnabled = false
 local autoEquipThread  = nil
 local selectedSlot     = 1 
 
+-- [STATE Auto Skill เพิ่มใหม่ 8 Slots]
+local autoSkillStates = {
+    [1] = {enabled = false, key = "T"},
+    [2] = {enabled = false, key = "Q"},
+    [3] = {enabled = false, key = "H"},
+    [4] = {enabled = false, key = "K"},
+    [5] = {enabled = false, key = "L"},
+    [6] = {enabled = false, key = "G"},
+    [7] = {enabled = false, key = "M"},
+    [8] = {enabled = false, key = "Z"}
+}
+
 -- ========================
 -- Boss Configuration
 -- ========================
@@ -239,6 +251,21 @@ local function updateFarmState()
 end
 
 -- ========================
+-- Auto Skill Logic (ฟังก์ชันจัดการการกดสกิลรัว)
+-- ========================
+local function startAutoSkill(slot)
+    task.spawn(function()
+        while autoSkillStates[slot].enabled do
+            local key = autoSkillStates[slot].key
+            if key and Enum.KeyCode[key] then
+                pressKey(Enum.KeyCode[key])
+            end
+            task.wait(0.5) -- ปรับความเร็วในการกดรัวตรงนี้ (0.5 คือ 2 ครั้งต่อวินาที)
+        end
+    end)
+end
+
+-- ========================
 -- Window Setup
 -- ========================
 local Window = WindUI:CreateWindow({
@@ -255,6 +282,11 @@ local Window = WindUI:CreateWindow({
 local MainTab = Window:Tab({
     Title = "Main Farm",
     Icon  = "crosshair",
+})
+
+local SkillTab = Window:Tab({
+    Title = "Auto Skill",
+    Icon  = "zap",
 })
 
 -- ========================
@@ -379,6 +411,35 @@ MainTab:Toggle({
 })
 
 -- ========================
+-- โซนสร้างปุ่มตั้งค่า Auto Skill ทั้งหมด 8 Slots พร้อมเมนูเลือก A-Z
+-- ========================
+local alphabet = {"A","B","C","D","E","F","G","H","I","J","K","L","M","N","O","P","Q","R","S","T","U","V","W","X","Y","Z"}
+
+for i = 1, 8 do
+    SkillTab:Section("Skill Slot " .. i)
+    
+    SkillTab:Dropdown({
+        Title = "เลือกปุ่มคีย์ลัด (Slot " .. i .. ")",
+        Values = alphabet,
+        Value = autoSkillStates[i].key,
+        Callback = function(selectedKey)
+            autoSkillStates[i].key = selectedKey
+        end,
+    })
+    
+    SkillTab:Toggle({
+        Title = "เปิดบอทกดสกิล Slot " .. i,
+        Value = false,
+        Callback = function(state)
+            autoSkillStates[i].enabled = state
+            if state then
+                startAutoSkill(i)
+            end
+        end,
+    })
+end
+
+-- ========================
 -- [ปรับปรุงใหม่] ระบบหน้าต่างลอยอัจฉริยะ (Floating Window แบบเสถียร ไม่ใช้ RightControl)
 -- ========================
 local FloatingGui    = Instance.new("ScreenGui")
@@ -434,7 +495,7 @@ end)
 -- แจ้งเตือนเมื่อโหลดเสร็จ
 WindUI:Notify({
     Title    = "MonHub Simple Loaded",
-    Content  = "ระบบรูปแบบใหม่ (Toggle บอสรายตัว) และ Auto Equip พร้อมใช้งานแล้ว!",
+    Content  = "ระบบรูปแบบใหม่ (Toggle บอสรายตัว) และ Auto Skill 8 ช่อง พร้อมใช้งานแล้ว!",
     Duration = 5,
     Icon     = "swords",
 })
