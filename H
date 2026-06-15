@@ -386,7 +386,9 @@ local FloatingButton = Instance.new("TextButton")
 local UICorner       = Instance.new("UICorner")
 local UIStroke       = Instance.new("UIStroke")
 
+-- ตั้งค่าระดับความสำคัญให้ Layer อยู่เหนือ UI อื่น ๆ ในเกมเพื่อป้องกันการถูกทับ
 FloatingGui.Name = "MonHubFloatingSmart"
+FloatingGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 FloatingGui.Parent = (game:GetService("CoreGui") or LocalPlayer:WaitForChild("PlayerGui"))
 FloatingGui.ResetOnSpawn = false
 
@@ -401,7 +403,8 @@ FloatingButton.Font = Enum.Font.GothamBold
 FloatingButton.TextSize = 24
 FloatingButton.Active = true
 FloatingButton.Draggable = true 
-FloatingButton.Visible = false -- เริ่มแรกตอนเปิด UI หน้าหลักจะแสดงอยู่ จึงซ่อนปุ่มลอยไว้ก่อน
+FloatingButton.ZIndex = 99999 -- บังคับค่าให้ปุ่มลอยอยู่บนสุดเสมอ 100%
+FloatingButton.Visible = false -- ตอนเปิดสคริปต์หน้าต่างหลักจะเปิดอยู่ จึงซ่อนไว้ก่อน
 
 UICorner.CornerRadius = UDim.new(0, 14)
 UICorner.Parent = FloatingButton
@@ -410,14 +413,22 @@ UIStroke.Color = Color3.fromRGB(0, 150, 255)
 UIStroke.Thickness = 2.5
 UIStroke.Parent = FloatingButton
 
--- ใช้คำสั่งของตัวไลบรารีเปิดปิดหน้าต่างโดยตรง (แม่นยำ 100%)
-FloatingButton.MouseButton1Click:Connect(function()
+-- ใช้คำสั่ง MouseButton1Down แทน Click เพื่อข้ามผ่าน Input บล็อกอื่นใน Roblox และสั่งงานหน้าต่างตรงๆ
+FloatingButton.MouseButton1Down:Connect(function()
     Window:Toggle()
 end)
 
 -- ผูกเข้ากับ Event ของ Wind UI เมื่อหน้าหลักยุบ/เปิด ให้ปุ่มลอยซ่อน/โผล่สลับกันแบบอัตโนมัติ
 Window.OnToggle:Connect(function(visible)
     FloatingButton.Visible = not visible
+end)
+
+-- ตัวเช็คระบบเริ่มต้น (Startup): ตรวจจับความถูกต้องภายใน 1 วินาที เพื่อบังคับให้ปุ่ม M ทำงานหากเมนูไม่เปิด
+task.spawn(function()
+    task.wait(1)
+    if Window and not Window.Visible then
+        FloatingButton.Visible = true
+    end
 end)
 
 -- แจ้งเตือนเมื่อโหลดเสร็จ
