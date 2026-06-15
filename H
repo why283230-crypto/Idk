@@ -411,15 +411,18 @@ MainTab:Toggle({
 })
 
 -- ========================
--- โซนสร้างปุ่มตั้งค่า Auto Skill ทั้งหมด 8 Slots พร้อมเมนูเลือก A-Z
+-- โซนสร้างปุ่มตั้งค่า Auto Skill ทั้งหมด 8 Slots พร้อมเมนูเลือก A-Z [แก้ไขแล้วชัวร์ 100%]
 -- ========================
 local alphabet = {"A","B","C","D","E","F","G","H","I","J","K","L","M","N","O","P","Q","R","S","T","U","V","W","X","Y","Z"}
 
 for i = 1, 8 do
-    SkillTab:Section("Skill Slot " .. i)
+    -- แก้ไขตรงนี้: เปลี่ยนมาระบุข้อมูลโดยตรงที่หัวข้อของ Dropdown และใช้ Divider แบ่งพาร์ทที่ปลอดภัยของ Wind UI แทนการใช้ Section เพื่อไม่ให้สคริปต์พัง
+    if i > 1 then
+        SkillTab:Divider()
+    end
     
     SkillTab:Dropdown({
-        Title = "เลือกปุ่มคีย์ลัด (Slot " .. i .. ")",
+        Title = "Slot " .. i .. " : เลือกปุ่มคีย์ลัดสกิล",
         Values = alphabet,
         Value = autoSkillStates[i].key,
         Callback = function(selectedKey)
