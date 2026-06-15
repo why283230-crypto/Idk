@@ -16,36 +16,29 @@ local LocalPlayer         = Players.LocalPlayer
 local farmingEnabled = false
 local farmThread     = nil
 
--- ปรับปรุง State: ใช้เก็บค่าเปิด/ปิดจาก Toggle ของบอสแต่ละตัวโดยตรง
+-- ใช้เก็บค่าเปิด/ปิดจาก Toggle ของบอสแต่ละตัว
 local targetBosses = {
     ["Great Ape"]     = false,
     ["Armored Titan"] = false,
     ["Crocodile"]     = false
 }
 
--- [STATE เพิ่มเติม] ระบบบันทึกตำแหน่งพิกัดกลับอัจฉริยะแบบแยกอิสระ
+-- ระบบบันทึกตำแหน่งพิกัดกลับอัจฉริยะแบบแยกอิสระ
 local savedPosition     = nil
 local useSavePosEnabled = false 
 
--- [STATE Auto Equip จากโค้ดที่คุณระบุ]
+-- [STATE Auto Equip]
 local autoEquipEnabled = false
 local autoEquipThread  = nil
 local selectedSlot     = 1 
 
--- [STATE Auto Skill เพิ่มใหม่ 8 Slots]
-local autoSkillStates = {
-    [1] = {enabled = false, key = "T"},
-    [2] = {enabled = false, key = "Q"},
-    [3] = {enabled = false, key = "H"},
-    [4] = {enabled = false, key = "K"},
-    [5] = {enabled = false, key = "L"},
-    [6] = {enabled = false, key = "G"},
-    [7] = {enabled = false, key = "M"},
-    [8] = {enabled = false, key = "Z"}
-}
+-- [STATE Auto Skill รูปแบบใหม่: จัดการเป็นกลุ่ม Multi-Select]
+local autoSkillEnabled = false
+local selectedSkills   = {} -- เก็บข้อมูลคีย์สกิลที่ถูกติ๊กเลือก เช่น ["Q"] = true, ["T"] = true
+local autoSkillThread  = nil
 
 -- ========================
--- Boss Configuration
+-- Configurations
 -- ========================
 local bossPaths = {
     ["Great Ape"]     = "GreatApe",
@@ -74,12 +67,11 @@ end
 local function pressKey(keyCode)
     pcall(function()
         VirtualInputManager:SendKeyEvent(true,  keyCode, false, game)
-        task.wait(0.05)
+        task.wait(0.02) -- เร่งความเร็วการกดจำลองให้ลื่นไหลยิ่งขึ้น
         VirtualInputManager:SendKeyEvent(false, keyCode, false, game)
     end)
 end
 
--- ฟังก์ชันหาตำแหน่งบอสใน ClientEntities 
 local function getBossPosition(bossName)
     local folderName = bossPaths[bossName]
     if not folderName then return nil end
@@ -106,7 +98,6 @@ local function getBossPosition(bossName)
     return root and root.Position
 end
 
--- เช็คว่า Slot มีของถืออยู่ไหม (จากโค้ดที่คุณระบุไว้เป๊ะๆ 100%)
 local function isSlotEquipped()
     local success, result = pcall(function()
         local playerGui = LocalPlayer:WaitForChild("PlayerGui", 3)
@@ -140,9 +131,7 @@ local function isSlotEquipped()
         end
         return false
     end)
-    if success then
-        return result
-    end
+    if success then return result end
     local char = LocalPlayer.Character
     if char then
         for _, v in ipairs(char:GetChildren()) do
@@ -153,7 +142,7 @@ local function isSlotEquipped()
 end
 
 -- ========================
--- Auto Equip Logic (จากโค้ดที่คุณระบุไว้เป๊ะๆ 100%)
+-- Auto Equip Logic
 -- ========================
 local function stopAutoEquip()
     autoEquipEnabled = false
@@ -181,7 +170,6 @@ local function startAutoEquip()
     end)
 end
 
--- ระบบเช็คและสวมใส่ไอเทมใหม่อัตโนมัติหลังจากตัวละครเกิด (ตายแล้วเกิดใหม่ จากโค้ดที่คุณระบุไว้ 100%)
 LocalPlayer.CharacterAdded:Connect(function(char)
     task.wait(1.5)
     if autoEquipEnabled then
@@ -193,7 +181,7 @@ LocalPlayer.CharacterAdded:Connect(function(char)
 end)
 
 -- ========================
--- Farm Logic แบบตรวจสอบจาก Toggle รายตัว และทำงานร่วมกับ Save Position
+-- Farm Logic
 -- ========================
 local function updateFarmState()
     local anyBossEnabled = false
@@ -251,16 +239,37 @@ local function updateFarmState()
 end
 
 -- ========================
--- Auto Skill Logic (ฟังก์ชันจัดการการกดสกิลรัว)
+-- Auto Skill Logic (แบบใหม่รันทีเดียวพร้อมกันทุกสกิลที่ติ๊ก)
 -- ========================
-local function startAutoSkill(slot)
-    task.spawn(function()
-        while autoSkillStates[slot].enabled do
-            local key = autoSkillStates[slot].key
-            if key and Enum.KeyCode[key] then
-                pressKey(Enum.KeyCode[key])
+local function stopAutoSkill()
+    autoSkillEnabled = false
+    if autoSkillThread then
+        task.cancel(autoSkillThread)
+        autoSkillThread = nil
+    end
+end
+
+local function startAutoSkill()
+    stopAutoSkill()
+    autoSkillEnabled = true
+    autoSkillThread = task.spawn(function()
+        while autoSkillEnabled do
+            local firedAny = false
+            for keyStr, isSelected in pairs(selectedSkills) do
+                if isSelected and Enum.KeyCode[keyStr] then
+                    firedAny = true
+                    -- ปรับแตก Thread ย่อยยิงพร้อมกันกระจายคีย์เวิร์ดแบบเรียลไทม์
+                    task.spawn(function()
+                        pressKey(Enum.KeyCode[keyStr])
+                    end)
+                end
             end
-            task.wait(0.5) -- ปรับความเร็วในการกดรัวตรงนี้ (0.5 คือ 2 ครั้งต่อวินาที)
+            -- หน่วงเวลารอบสากล (ปรับเปลี่ยนให้รัวขึ้นได้ตรง 0.3 วินาที)
+            if firedAny then
+                task.wait(0.3)
+            else
+                task.wait(0.1)
+            end
         end
     end)
 end
@@ -290,7 +299,7 @@ local SkillTab = Window:Tab({
 })
 
 -- ========================
--- โซนปุ่มพิกัด Toggle ลูปบอสรายตัว
+-- Main Farm โซนปุ่มพิกัด
 -- ========================
 MainTab:Toggle({
     Title = "Auto บอสลิง",
@@ -327,7 +336,6 @@ MainTab:Toggle({
 
 MainTab:Divider()
 
--- ระบบ Save Position 
 MainTab:Button({
     Title = "Save Position (กดเพื่อเซฟจุดปัจจุบัน)",
     Desc  = "บันทึกพิกัดยืนปัจจุบันของคุณ เพื่อให้ตัวละครวาร์ปกลับมาเมื่อบอสไม่เกิด",
@@ -369,7 +377,6 @@ MainTab:Toggle({
 
 MainTab:Divider()
 
--- ส่วนควบคุมระบบสล็อตไอเทม (Auto Equip ดึงตามชุดที่คุณระบุมาใส่ให้ครบถ้วน)
 MainTab:Dropdown({
     Title  = "เลือก Slot ที่จะ Equip",
     Desc   = "กดปุ่มตัวเลขนั้นซ้ำๆ ตรวจจับจาก Hotbar PlayerGui",
@@ -393,64 +400,62 @@ MainTab:Toggle({
     Callback = function(state)
         if state then
             startAutoEquip()
-            WindUI:Notify({
-                Title    = "Auto Equip เปิดแล้ว",
-                Content  = "Slot: " .. tostring(selectedSlot or "?"),
-                Duration = 3,
-                Icon     = "check-circle",
-            })
+            WindUI:Notify({ Title = "Auto Equip เปิดแล้ว", Content = "Slot: " .. tostring(selectedSlot or "?"), Duration = 3, Icon = "check-circle" })
         else
             stopAutoEquip()
-            WindUI:Notify({
-                Title    = "Auto Equip ปิดแล้ว",
-                Duration = 2,
-                Icon     = "x-circle",
-            })
+            WindUI:Notify({ Title = "Auto Equip ปิดแล้ว", Duration = 2, Icon = "x-circle" })
         end
     end,
 })
 
 -- ========================
--- โซนสร้างปุ่มตั้งค่า Auto Skill ทั้งหมด 8 Slots พร้อมเมนูเลือก A-Z [แก้ไขแล้วชัวร์ 100%]
+-- [ปรับปรุงตามขอ] โซน Auto Skill รูปแบบ Multi-Select รวมมิตรในอันเดียว
 -- ========================
 local alphabet = {"A","B","C","D","E","F","G","H","I","J","K","L","M","N","O","P","Q","R","S","T","U","V","W","X","Y","Z"}
 
-for i = 1, 8 do
-    -- แก้ไขตรงนี้: เปลี่ยนมาระบุข้อมูลโดยตรงที่หัวข้อของ Dropdown และใช้ Divider แบ่งพาร์ทที่ปลอดภัยของ Wind UI แทนการใช้ Section เพื่อไม่ให้สคริปต์พัง
-    if i > 1 then
-        SkillTab:Divider()
-    end
-    
-    SkillTab:Dropdown({
-        Title = "Slot " .. i .. " : เลือกปุ่มคีย์ลัดสกิล",
-        Values = alphabet,
-        Value = autoSkillStates[i].key,
-        Callback = function(selectedKey)
-            autoSkillStates[i].key = selectedKey
-        end,
-    })
-    
-    SkillTab:Toggle({
-        Title = "เปิดบอทกดสกิล Slot " .. i,
-        Value = false,
-        Callback = function(state)
-            autoSkillStates[i].enabled = state
-            if state then
-                startAutoSkill(i)
+SkillTab:Dropdown({
+    Title = "เลือกสกิลที่จะใช้รัว (เลือกพร้อมกันได้หลายปุ่ม)",
+    Desc  = "เลือกตัวอักษรเพื่อบรรจุเข้าระบบ Auto Skill",
+    Icon  = "keyboard",
+    Multi = true, -- เปิดใช้งานฟังชั่นเลือกพร้อมกันหลายตัวของ Wind UI
+    Values = alphabet,
+    Callback = function(selectedList)
+        -- เคลียร์อาเรย์เดิม แล้วลูปจัดเซ็ตค่าคีย์ที่ผู้เล่นกดเปิดใช้งานจริงใหม่ทั้งหมด
+        selectedSkills = {}
+        if type(selectedList) == "table" then
+            for _, k in pairs(selectedList) do
+                selectedSkills[k] = true
             end
-        end,
-    })
-end
+        elseif type(selectedList) == "string" then
+            selectedSkills[selectedList] = true
+        end
+    end,
+})
+
+SkillTab:Toggle({
+    Title = "เปิดใช้งานระบบ Auto Skill ลูปพร้อมกันทั้งหมด",
+    Desc  = "จะกดปุ่มตัวเลือกทั้งหมดที่คุณเลือกไว้ด้านบนอย่างรวดเร็ว",
+    Icon  = "zap",
+    Value = false,
+    Callback = function(state)
+        if state then
+            startAutoSkill()
+            WindUI:Notify({ Title = "Auto Skill ทำงาน", Content = "เริ่มสแปมปุ่มสกิลที่กำหนดเลือกไว้", Duration = 3, Icon = "check" })
+        else
+            stopAutoSkill()
+            WindUI:Notify({ Title = "Auto Skill หยุดทำงาน", Duration = 2, Icon = "x" })
+        end
+    end,
+})
 
 -- ========================
--- [ปรับปรุงใหม่] ระบบหน้าต่างลอยอัจฉริยะ (Floating Window แบบเสถียร ไม่ใช้ RightControl)
+-- [แก้ไขบัคใหญ่ 100%] ระบบหน้าต่างลอยอัจฉริยะ (Smooth Dragging ไม่ใช้ .Draggable เดิม)
 -- ========================
 local FloatingGui    = Instance.new("ScreenGui")
 local FloatingButton = Instance.new("TextButton")
 local UICorner       = Instance.new("UICorner")
 local UIStroke       = Instance.new("UIStroke")
 
--- ตั้งค่าระดับความสำคัญให้ Layer อยู่เหนือ UI อื่น ๆ ในเกมเพื่อป้องกันการถูกทับ
 FloatingGui.Name = "MonHubFloatingSmart"
 FloatingGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 FloatingGui.Parent = (game:GetService("CoreGui") or LocalPlayer:WaitForChild("PlayerGui"))
@@ -466,9 +471,8 @@ FloatingButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 FloatingButton.Font = Enum.Font.GothamBold
 FloatingButton.TextSize = 24
 FloatingButton.Active = true
-FloatingButton.Draggable = true 
-FloatingButton.ZIndex = 99999 -- บังคับค่าให้ปุ่มลอยอยู่บนสุดเสมอ 100%
-FloatingButton.Visible = false -- ตอนเปิดสคริปต์หน้าต่างหลักจะเปิดอยู่ จึงซ่อนไว้ก่อน
+FloatingButton.ZIndex = 99999 
+FloatingButton.Visible = false 
 
 UICorner.CornerRadius = UDim.new(0, 14)
 UICorner.Parent = FloatingButton
@@ -477,17 +481,48 @@ UIStroke.Color = Color3.fromRGB(0, 150, 255)
 UIStroke.Thickness = 2.5
 UIStroke.Parent = FloatingButton
 
--- ใช้คำสั่ง MouseButton1Down แทน Click เพื่อข้ามผ่าน Input บล็อกอื่นใน Roblox และสั่งงานหน้าต่างตรงๆ
+-- ฟังก์ชั่นคำนวณการ Drag หน้าต่างลอยขึ้นมาใหม่ด้วยโค้ดเพียว ลากลื่นไหลและไม่พังแน่นอน 100%
+local dragging, dragInput, dragStart, startPos
+local function update(input)
+    local delta = input.Position - dragStart
+    FloatingButton.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+end
+
+FloatingButton.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = FloatingButton.Position
+        
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
+    end
+end)
+
+FloatingButton.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        dragInput = input
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        update(input)
+    end
+end)
+
+-- ปุ่มคลิกสลับเมนู
 FloatingButton.MouseButton1Down:Connect(function()
     Window:Toggle()
 end)
 
--- ผูกเข้ากับ Event ของ Wind UI เมื่อหน้าหลักยุบ/เปิด ให้ปุ่มลอยซ่อน/โผล่สลับกันแบบอัตโนมัติ
 Window.OnToggle:Connect(function(visible)
     FloatingButton.Visible = not visible
 end)
 
--- ตัวเช็คระบบเริ่มต้น (Startup): ตรวจจับความถูกต้องภายใน 1 วินาที เพื่อบังคับให้ปุ่ม M ทำงานหากเมนูไม่เปิด
 task.spawn(function()
     task.wait(1)
     if Window and not Window.Visible then
@@ -495,10 +530,10 @@ task.spawn(function()
     end
 end)
 
--- แจ้งเตือนเมื่อโหลดเสร็จ
+-- ประกาศความสำเร็จระบบหลังประมวลผลผ่านเสร็จสิ้น
 WindUI:Notify({
-    Title    = "MonHub Simple Loaded",
-    Content  = "ระบบรูปแบบใหม่ (Toggle บอสรายตัว) และ Auto Skill 8 ช่อง พร้อมใช้งานแล้ว!",
+    Title    = "MonHub Smart Fixed!",
+    Content  = "แก้ไขปุ่มลอย M แข็งแกร่ง และรวมเมนู Auto Skill เป็นกล่องเรียบร้อย!",
     Duration = 5,
-    Icon     = "swords",
+    Icon     = "check",
 })
