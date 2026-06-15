@@ -1,11 +1,12 @@
 -- MonHub | Farm Boss
+-- Wind UI Latest
 local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
+
 -- ========================
 -- Services
 -- ========================
 local Players             = game:GetService("Players")
 local VirtualInputManager = game:GetService("VirtualInputManager")
-local TweenService        = game:GetService("TweenService")
 
 local LocalPlayer = Players.LocalPlayer
 
@@ -18,7 +19,7 @@ local farmThread       = nil
 
 local autoEquipEnabled = false
 local autoEquipThread  = nil
-local selectedSlot     = 1  -- Default เป็น 1 เพื่อป้องกันค่า nil
+local selectedSlot     = nil
 
 local spaceLoopEnabled = false
 local spaceThread      = nil
@@ -56,7 +57,7 @@ local letterKeyCode = {
     A = Enum.KeyCode.A, B = Enum.KeyCode.B, C = Enum.KeyCode.C,
     D = Enum.KeyCode.D, E = Enum.KeyCode.E, F = Enum.KeyCode.F,
     G = Enum.KeyCode.G, H = Enum.KeyCode.H, I = Enum.KeyCode.I,
-    J = Enum.KeyCode.J, K = Enum.KeyCode.L, L = Enum.KeyCode.L,
+    J = Enum.KeyCode.J, K = Enum.KeyCode.K, L = Enum.KeyCode.L,
     M = Enum.KeyCode.M, N = Enum.KeyCode.N, O = Enum.KeyCode.O,
     P = Enum.KeyCode.P, Q = Enum.KeyCode.Q, R = Enum.KeyCode.R,
     S = Enum.KeyCode.S, T = Enum.KeyCode.T, U = Enum.KeyCode.U,
@@ -79,37 +80,23 @@ local function teleportTo(pos)
     end
 end
 
--- [BUG FIX 3 - เสมือนกดคีย์บอร์ดจริง]
-local function pressKey(keyCode)
-    pcall(function()
-        VirtualInputManager:SendKeyEvent(true, keyCode, false, game)
-        task.wait(0.02) -- หน่วงเวลาเสมือนนิ้วกดลงไปจริงๆ
-        VirtualInputManager:SendKeyEvent(false, keyCode, false, game)
-    end)
-end
-
--- [BUG FIX 1 - ค้นหาบอสตรงพิกัดและแม่นยำขึ้น]
+-- [BUG FIX 1] Auto Farm: หา Boss Position ด้วย FindFirstChild ตรงๆ
+-- ไม่เช็ค Humanoid Health เพราะอาจทำให้ข้ามบอสที่มีอยู่จริง
 local function findBossPosition(bossName)
     local key = bossModelKey[bossName]
     if not key then return nil end
 
-    -- ตรวจสอบทั้งใน Workspace หลักและ ClientEntities
-    local targets = {workspace, workspace:FindFirstChild("ClientEntities")}
-    local model = nil
+    local ce = workspace:FindFirstChild("ClientEntities")
+    if not ce then return nil end
 
-    for _, parent in ipairs(targets) do
-        if parent then
-            model = parent:FindFirstChild(key)
-            if model then break end
-        end
-    end
-
+    local model = ce:FindFirstChild(key)
     if not model then return nil end
 
-    local root = model:FindFirstChild("HumanoidRootPart") 
-        or model:FindFirstChild("RootPart") 
-        or model:PrimaryPart
+    -- วนหา BasePart ทุก Part ใน Model เพื่อหา Root
+    local root = model:FindFirstChild("HumanoidRootPart")
+        or model:FindFirstChild("RootPart")
 
+    -- ถ้าไม่มี HRP/RootPart ให้หา BasePart ตัวแรกที่เจอ
     if not root then
         for _, part in ipairs(model:GetDescendants()) do
             if part:IsA("BasePart") then
@@ -126,66 +113,73 @@ local function findBossPosition(bossName)
     return nil
 end
 
--- [BUG FIX 2 - ตรวจจับจากภาพหน้าจอ Hotbar และเช็ค UIStroke/ความโปร่งใสเพื่อหยุดกดซ้ำ]
-local function isSlotEquipped()
-    local equipped = false
+-- [BUG FIX 3] Auto Skill: pressKey ใช้ VirtualInputManager แบบถูกต้อง
+local function pressKey(keyCode)
     pcall(function()
+        VirtualInputManager:SendKeyEvent(true,  keyCode, false, game)
+        task.wait(0.05)
+        VirtualInputManager:SendKeyEvent(false, keyCode, false, game)
+    end)
+end
+
+-- [BUG FIX 2] Auto Equip: ตรวจจับจาก PlayerGui Hotbar แทน Tool
+-- เช็คว่า Slot ที่เลือกมีของถืออยู่ไหมจาก Hotbar
+local hotbarSlotNames = { "Strength", "Sword", "Durability", "Chakra" }
+
+local function isSlotEquipped()
+    local success, result = pcall(function()
         local playerGui = LocalPlayer:WaitForChild("PlayerGui", 3)
-        if not playerGui then return end
+        if not playerGui then return false end
 
-        -- สแกนหา Hotbar UI ในลักษณะ Dynamic ป้องกันชื่อ Path เปลี่ยน
-        local hotbar = playerGui:FindFirstChild("Hotbar", true) 
-            or playerGui:FindFirstChild("Main", true) and playerGui.Main:FindFirstChild("HUD", true) and playerGui.Main.HUD:FindFirstChild("Hotbar")
+        local main = playerGui:FindFirstChild("Main")
+        if not main then return false end
 
-        if hotbar then
-            -- ค้นหาช่องตามตัวเลข Slot ที่เลือก (เช็คจากเลข 1, 2, 3 บนภาพ)
-            local targetSlotStr = tostring(selectedSlot)
-            for _, child in ipairs(hotbar:GetDescendants()) do
-                if child:IsA("TextLabel") and child.Text == targetSlotStr then
-                    -- เมื่อเจอตัวเลขสล็อต ให้เช็ค Frame หลักของมันว่าเลือกอยู่ไหม
-                    local slotFrame = child.Parent
-                    if slotFrame then
-                        -- 1. เช็ค UIStroke (จากภาพที่ 1) ถ้าขอบสว่างหรือหนาขึ้นแสดงว่าเลือกอยู่
-                        local stroke = slotFrame:FindFirstChildOfClass("UIStroke")
-                        if stroke and stroke.Enabled and stroke.Thickness > 0 then
-                            equipped = true
-                            return
-                        end
-                        -- 2. เช็ค Background หรือ Frame ไฮไลท์ซ้อนข้างใน
-                        local activeIndicator = slotFrame:FindFirstChild("Selected") or slotFrame:FindFirstChild("Active")
-                        if activeIndicator and activeIndicator.Visible then
-                            equipped = true
-                            return
-                        end
-                        -- 3. เช็คความทึบแสง (ถ้าถูกเลือกมักจะทึบขึ้น)
-                        if slotFrame:IsA("GuiObject") and slotFrame.BackgroundTransparency < 0.3 then
-                            equipped = true
-                            return
-                        end
+        local hud = main:FindFirstChild("HUD")
+        if not hud then return false end
+
+        local hotbar = hud:FindFirstChild("Hotbar")
+        if not hotbar then return false end
+
+        -- ตรวจทุก slot ที่รู้จัก ดูว่ามี slot ไหน Equipped อยู่
+        -- โดยเช็ค Visible หรือ property ที่บ่งบอกว่า Active
+        for _, slotName in ipairs(hotbarSlotNames) do
+            local slot = hotbar:FindFirstChild(slotName)
+            if slot then
+                -- เช็คว่า slot นั้น Active/Selected อยู่ไหม
+                -- ลอง BackgroundColor, Selected, Active, หรือ child ที่ชื่อ Selected/Active
+                local selectedFrame = slot:FindFirstChild("Selected")
+                    or slot:FindFirstChild("Active")
+                    or slot:FindFirstChild("Equipped")
+                if selectedFrame and selectedFrame.Visible then
+                    return true
+                end
+                -- fallback: เช็คว่า slot มี ImageLabel/TextLabel ที่แสดงว่า equipped
+                if slot:IsA("GuiObject") then
+                    local bg = slot.BackgroundTransparency
+                    -- ถ้า BackgroundTransparency < 1 = มีของ highlight = equipped
+                    if bg ~= nil and bg < 0.9 then
+                        return true
                     end
                 end
             end
         end
+        return false
     end)
-
-    -- Fallback: ตรวจสอบ Tool ในตัวละครจริง
-    if not equipped then
-        local char = LocalPlayer.Character
-        if char then
-            for _, v in ipairs(char:GetChildren()) do
-                if v:IsA("Tool") then
-                    equipped = true
-                    break
-                end
-            end
+    if success then
+        return result
+    end
+    -- ถ้า pcall fail ให้ fallback เช็ค Tool ใน Character แทน
+    local char = LocalPlayer.Character
+    if char then
+        for _, v in ipairs(char:GetChildren()) do
+            if v:IsA("Tool") then return true end
         end
     end
-
-    return equipped
+    return false
 end
 
 -- ========================
--- Farm Logic
+-- Farm Logic [BUG FIX 1]
 -- ========================
 local function stopFarm()
     farmingEnabled = false
@@ -207,25 +201,28 @@ local function startFarm()
 
                 local pos = findBossPosition(bossName)
                 if pos then
+                    -- [FIX] วาปตรงๆ ไม่มี offset
                     teleportTo(pos)
                     found = true
-                    task.wait(0.2)
+                    task.wait(0.3)
                 else
                     task.wait(0.1)
                 end
             end
 
-            if not found and savedPosition then
-                teleportTo(savedPosition)
+            if not found then
+                if savedPosition then
+                    teleportTo(savedPosition)
+                end
             end
 
-            task.wait(0.3)
+            task.wait(0.5)
         end
     end)
 end
 
 -- ========================
--- Auto Equip Logic
+-- Auto Equip Logic [BUG FIX 2]
 -- ========================
 local function stopAutoEquip()
     autoEquipEnabled = false
@@ -241,21 +238,22 @@ local function startAutoEquip()
     autoEquipEnabled = true
     autoEquipThread = task.spawn(function()
         while autoEquipEnabled do
+            -- [FIX] ใช้ isSlotEquipped() จาก Hotbar PlayerGui
             if not isSlotEquipped() then
                 local kc = slotKeyCode[selectedSlot]
                 if kc then
                     pressKey(kc)
-                    task.wait(0.3) -- รอระบบเซิร์ฟเวอร์ตอบสนองการถือของ
+                    task.wait(0.5)
                 end
             else
-                task.wait(0.5) -- ถืออยู่แล้ว ให้รอวนตรวจเช็คอย่างเดียว ไม่กดซ้ำรัวๆ
+                task.wait(0.5)
             end
         end
     end)
 end
 
 -- ========================
--- Auto Skill Logic
+-- Auto Skill Logic [BUG FIX 3]
 -- ========================
 local function stopAutoSkill()
     autoSkillEnabled = false
@@ -275,20 +273,27 @@ local function startAutoSkill()
                 if not active then continue end
                 local kc = letterKeyCode[letter]
                 if kc then
-                    pressKey(kc) -- ใช้ฟังก์ชันกดเสมือนคีย์บอร์ดจริง
+                    -- [FIX] กด Key แบบ Down/Up ชัดเจน แยก pcall ต่อ key
+                    pcall(function()
+                        VirtualInputManager:SendKeyEvent(true,  kc, false, game)
+                    end)
+                    task.wait(0.05)
+                    pcall(function()
+                        VirtualInputManager:SendKeyEvent(false, kc, false, game)
+                    end)
                     hasKey = true
-                    task.wait(0.1) -- เว้นช่วงระหว่างการกดแต่ละสกิล
+                    task.wait(0.05)
                 end
             end
             if not hasKey then
-                task.wait(0.2)
+                task.wait(0.1)
             end
         end
     end)
 end
 
 -- ========================
--- Window Setup
+-- Window
 -- ========================
 local Window = WindUI:CreateWindow({
     Title       = "MonHub | Farm Boss",
@@ -299,62 +304,9 @@ local Window = WindUI:CreateWindow({
     Theme       = "Dark",
     Acrylic     = true,
     Transparent = true,
+    -- [BUG FIX 4] ปุ่มลอยเปิด UI ใหม่ได้เมื่อกด Toggle
     ToggleKey   = Enum.KeyCode.RightControl,
 })
-
--- ========================
--- [BUG FIX 4 - ระบบหน้าต่างลอยจริงๆ (Floating Toggle Button)]
--- ========================
-local FloatingGui = Instance.new("ScreenGui")
-local FloatingButton = Instance.new("TextButton")
-local UICorner = Instance.new("UICorner")
-local UIStroke = Instance.new("UIStroke")
-
-FloatingGui.Name = "MonHubFloatingUI"
-FloatingGui.Parent = (game:GetService("CoreGui") or LocalPlayer:WaitForChild("PlayerGui"))
-FloatingGui.ResetOnSpawn = false
-
-FloatingButton.Name = "ToggleButton"
-FloatingButton.Parent = FloatingGui
-FloatingButton.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
-FloatingButton.Position = UDim2.new(0.05, 0, 0.2, 0) -- ตำแหน่งเริ่มต้นบนหน้าจอด้านซ้าย
-FloatingButton.Size = UDim2.fromOffset(55, 55)
-FloatingButton.Text = "M" -- อักษรย่อของ MonHub บนหน้าต่างลอย
-FloatingButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-FloatingButton.Font = Enum.Font.GothamBold
-FloatingButton.TextSize = 20
-FloatingButton.Active = true
-FloatingButton.Draggable = true -- ทำให้ลากย้ายตำแหน่งบนจอได้อิสระ
-FloatingButton.Visible = false -- เริ่มต้นซ่อนไว้ จะแสดงเมื่อปิด UI หลักเท่านั้น
-
-UICorner.CornerRadius = UDim.new(0, 12)
-UICorner.Parent = FloatingButton
-
-UIStroke.Color = Color3.fromRGB(0, 120, 255)
-UIStroke.Thickness = 2
-UIStroke.Parent = FloatingButton
-
--- ดักจับการเปิด-ปิดหน้าจอ UI หลักของ WindUI เพื่อสลับกับการแสดงผลหน้าต่างลอย
-task.spawn(function()
-    while true do
-        if Window then
-            -- ตรวจสอบว่าหน้าจอหลักปิดอยู่หรือไม่ (ถ้าปิด ให้โชว์ปุ่มลอย / ถ้าเปิด ให้ซ่อนปุ่มลอย)
-            local isMainOpen = Window:IsOpen() -- ตรวจสถานะ UI จาก Library
-            if isMainOpen ~= nil then
-                FloatingButton.Visible = not isMainOpen
-            end
-        end
-        task.wait(0.3)
-    end
-end)
-
--- กดที่หน้าต่างลอยเพื่อเปิด UI หลักขึ้นมาใหม่
-FloatingButton.MouseButton1Click:Connect(function()
-    if Window then
-        Window:Open()
-        FloatingButton.Visible = false
-    end
-end)
 
 -- ========================
 -- Tab: Farm Boss
@@ -446,7 +398,7 @@ EquipTab:Dropdown({
     Value  = "Slot 1",
     Callback = function(selected)
         local num = tonumber(selected:match("%d"))
-        selectedSlot = num or 1
+        selectedSlot = num
         if autoEquipEnabled then
             startAutoEquip()
         end
@@ -593,14 +545,15 @@ UtilTab:Toggle({
 
 UtilTab:Divider()
 
+-- [BUG FIX 4] ปุ่มข้อมูล Toggle Key
 UtilTab:Button({
     Title = "วิธีเปิด UI ใหม่",
-    Desc  = "กดปุ่มลอยตัว 'M' บนจอ หรือกดปุ่ม Right Control",
+    Desc  = "กด RightControl (Right Ctrl) เพื่อเปิด/ปิด UI",
     Icon  = "info",
     Callback = function()
         WindUI:Notify({
             Title    = "Toggle UI",
-            Content  = "คุณสามารถคลิกปุ่มตัว M ลอยบนจอเพื่อเปิดใหม่ได้",
+            Content  = "กด RightControl เพื่อเปิด/ปิด UI",
             Duration = 5,
             Icon     = "info",
         })
@@ -612,7 +565,7 @@ UtilTab:Button({
 -- ========================
 WindUI:Notify({
     Title    = "MonHub | Farm Boss",
-    Content  = "โหลดสำเร็จ! หน้าต่างลอย 'M' พร้อมใช้งานเมื่อปิด UI",
+    Content  = "โหลดสำเร็จ! กด RightCtrl เพื่อเปิด/ปิด UI",
     Duration = 5,
     Icon     = "swords",
 })
