@@ -67,7 +67,7 @@ end
 local function pressKey(keyCode)
     pcall(function()
         VirtualInputManager:SendKeyEvent(true,  keyCode, false, game)
-        task.wait(0.02) -- เร่งความเร็วการกดจำลองให้ลื่นไหลยิ่งขึ้น
+        task.wait(0.02) 
         VirtualInputManager:SendKeyEvent(false, keyCode, false, game)
     end)
 end
@@ -142,7 +142,7 @@ local function isSlotEquipped()
 end
 
 -- ========================
--- Auto Equip Logic [แก้ไขให้ตรวจสอบแบบ Real-time ตลอดเวลา]
+-- Auto Equip Logic [ปรับเปลี่ยนดีเลย์การวนลูปเป็น 4 วินาทีตามบรีฟ]
 -- ========================
 local function stopAutoEquip()
     autoEquipEnabled = false
@@ -159,20 +159,19 @@ local function startAutoEquip()
     
     autoEquipThread = task.spawn(function()
         while autoEquipEnabled do
-            -- [แก้ไขตรงจุด] ลูปเช็คทุก ๆ 0.5 วินาที ถ้าวาร์ปไปโซนบอสแล้วของหลุดมือ มันจะกดใส่ใหม่อีกรอบทันที
+            -- ตรวจสอบหากหลุดมือระหว่างวาร์ปข้ามแผนที่หรือไปหาบอส
             if not isSlotEquipped() then
                 local kc = slotKeyCode[selectedSlot]
                 if kc then
                     pressKey(kc)
-                    task.wait(0.3) -- หน่วงเวลาสั้น ๆ ให้ตัวละครทำอนิเมชันสวมใส่สำเร็จ
+                    task.wait(0.5) -- ปรับดีเลย์หน่วงหลังจากกด เพื่อรอให้อนิเมชันเกมแสดงผลสมบูรณ์
                 end
             end
-            task.wait(0.5) -- วนลูปตรวจสอบความถูกต้องเรียลไทม์
+            task.wait(4.0) -- [แก้ไขตรงจุด] ปรับเปลี่ยนดีเลย์ลูปการตรวจสอบเรียลไทม์เป็น 4 วินาทีถ้วน
         end
     end)
 end
 
--- ดักจับกรณีตัวละครตายแล้วเกิดใหม่
 LocalPlayer.CharacterAdded:Connect(function(char)
     task.wait(1.5)
     if autoEquipEnabled then
@@ -346,10 +345,10 @@ MainTab:Button({
         if hrp then
             savedPosition = hrp.Position
             WindUI:Notify({
-                Title    = "บันทึกพิกัดสำเร็จ",
-                Content  = ("X: %.1f | Y: %.1f | Z: %.1f"):format(savedPosition.X, savedPosition.Y, savedPosition.Z),
+                Title = "บันทึกพิกัดสำเร็จ",
+                Content = ("X: %.1f | Y: %.1f | Z: %.1f"):format(savedPosition.X, savedPosition.Y, savedPosition.Z),
                 Duration = 4,
-                Icon     = "map-pin"
+                Icon = "map-pin"
             })
         else
             WindUI:Notify({ Title = "เกิดข้อผิดพลาด", Content = "ไม่พบพิกัดตัวละครของคุณ", Duration = 3, Icon = "alert-circle" })
@@ -395,13 +394,13 @@ MainTab:Dropdown({
 
 MainTab:Toggle({
     Title = "Auto Equip",
-    Desc  = "เปิด/ปิด การกดปุ่ม Slot อัตโนมัติ (ตรวจสอบและสวมใส่ซ้ำทันทีเมื่อไอเทมหลุดมือ)",
+    Desc  = "เปิด/ปิด การกดปุ่ม Slot อัตโนมัติ (ตรวจสอบและสวมใส่ซ้ำทุก ๆ 4 วินาที)",
     Icon  = "shield",
     Value = false,
     Callback = function(state)
         if state then
             startAutoEquip()
-            WindUI:Notify({ Title = "Auto Equip เปิดแล้ว", Content = "Slot: " .. tostring(selectedSlot or "?"), Duration = 3, Icon = "check-circle" })
+            WindUI:Notify({ Title = "Auto Equip เปิดแล้ว", Content = "Slot: " .. tostring(selectedSlot or "?") .. " [Delay: 4s]", Duration = 3, Icon = "check-circle" })
         else
             stopAutoEquip()
             WindUI:Notify({ Title = "Auto Equip ปิดแล้ว", Duration = 2, Icon = "x-circle" })
@@ -410,7 +409,7 @@ MainTab:Toggle({
 })
 
 -- ========================
--- โซน Auto Skill รูปแบบ Multi-Select รวมมิตรในอันเดียว
+-- โซน Auto Skill รูปแบบ Multi-Select
 -- ========================
 local alphabet = {"A","B","C","D","E","F","G","H","I","J","K","L","M","N","O","P","Q","R","S","T","U","V","W","X","Y","Z"}
 
@@ -449,7 +448,7 @@ SkillTab:Toggle({
 })
 
 -- ========================
--- ระบบหน้าต่างลอยอัจฉริยะ (Smooth Dragging ไม่ใช้ .Draggable เดิม)
+-- [แก้ไขบั๊กสมบูรณ์] ระบบหน้าต่างลอยอัจฉริยะ (เสถียร ซิงค์สถานะ 2 ทิศทาง)
 -- ========================
 local FloatingGui    = Instance.new("ScreenGui")
 local FloatingButton = Instance.new("TextButton")
@@ -472,7 +471,7 @@ FloatingButton.Font = Enum.Font.GothamBold
 FloatingButton.TextSize = 24
 FloatingButton.Active = true
 FloatingButton.ZIndex = 99999 
-FloatingButton.Visible = false 
+FloatingButton.Visible = false -- เริ่มต้นซ่อนไว้ก่อน เพราะหน้าต่างหลักมักจะแสดงขึ้นมาตอนโหลดครั้งแรก
 
 UICorner.CornerRadius = UDim.new(0, 14)
 UICorner.Parent = FloatingButton
@@ -481,6 +480,7 @@ UIStroke.Color = Color3.fromRGB(0, 150, 255)
 UIStroke.Thickness = 2.5
 UIStroke.Parent = FloatingButton
 
+-- ฟังก์ชั่นคำนวณการ Drag หน้าต่างลอย
 local dragging, dragInput, dragStart, startPos
 local function update(input)
     local delta = input.Position - dragStart
@@ -513,24 +513,37 @@ UserInputService.InputChanged:Connect(function(input)
     end
 end)
 
-FloatingButton.MouseButton1Down:Connect(function()
+-- ฟังก์ชันจัดการสถานะเปิด/ปิด UI หลักและปุ่มลอยร่วมกันอย่างสมบูรณ์
+local function toggleUI()
     Window:Toggle()
-end)
+    -- บังคับเปลี่ยนสถานะปุ่ม M ตามจังหวะการกดทันที ไม่ต้องรอ Event ล่าช้า
+    task.defer(function()
+        if Window.Main then -- ตรวจเช็คสถานะการมองเห็นของ Object หลักในโครงสร้าง UI
+            FloatingButton.Visible = not Window.Main.Visible
+        end
+    end)
+end
 
-Window.OnToggle:Connect(function(visible)
-    FloatingButton.Visible = not visible
-end)
+-- ผูกคำสั่ง Click เข้ากับระบบควบคุมใหม่
+FloatingButton.MouseButton1Down:Connect(toggleUI)
 
+-- ระบบตัดปัญหา Race Condition: วนลูปตรวจสอบซิงค์สถานะเบื้องหลังแบบเรียลไทม์ (หมดปัญหาปุ่มค้าง/หาย)
 task.spawn(function()
-    task.wait(1)
-    if Window and not Window.Visible then
-        FloatingButton.Visible = true
+    while true do
+        if Window and Window.Main then
+            local isUiOpen = Window.Main.Visible
+            if FloatingButton.Visible == isUiOpen then
+                FloatingButton.Visible = not isUiOpen
+            end
+        end
+        task.wait(0.5)
     end
 end)
 
+-- แจ้งเตือนความสำเร็จ
 WindUI:Notify({
-    Title    = "MonHub Smart Fixed!",
-    Content  = "เพิ่มระบบตรวจสอบและสวมใส่ไอเทมซ้ำอัตโนมัติแบบเรียลไทม์เรียบร้อยแล้ว!",
+    Title    = "MonHub Smart Tuned!",
+    Content  = "แก้ไขปุ่มลอยเสถียรขั้นสุด & ปรับดีเลย์ Auto Equip เป็น 4 วินาทีเรียบร้อย!",
     Duration = 5,
     Icon     = "check",
 })
