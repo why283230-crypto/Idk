@@ -1,5 +1,5 @@
--- -- MonHub | Farm Boss & Auto Equip Final Edition
--- -- Wind UI Latest
+-- -- MonHub | AFS:OG V.3 (Farm Boss & Auto Equip Premium Edition)
+-- -- Wind UI Latest Custom Neon Theme
 local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
 
 -- ========================
@@ -8,6 +8,7 @@ local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/rel
 local Players             = game:GetService("Players")
 local UserInputService    = game:GetService("UserInputService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
+local HttpService         = game:GetService("HttpService")
 local LocalPlayer         = Players.LocalPlayer
 
 -- ========================
@@ -29,7 +30,8 @@ local useSavePosEnabled = false
 local autoEquipEnabled  = false
 local autoEquipThread   = nil
 local selectedSlot      = 1
-local strokeConn        = nil -- connection สำหรับ GetPropertyChangedSignal
+local strokeConn        = nil 
+local isEquipping       = false 
 
 -- [Auto Skill]
 local autoSkillEnabled = false
@@ -53,7 +55,6 @@ local slotKeyCode = {
     [5] = Enum.KeyCode.Five,
 }
 
--- ชื่อ Slot ใน Hotbar ที่ต้องการตรวจ (ปรับได้ตามเกม)
 local hotbarSlotNames = { "Strength", "Sword", "Durability", "Chakra" }
 
 -- ========================
@@ -90,10 +91,6 @@ local function getBossPosition(bossName)
     return root and root.Position
 end
 
--- ========================
--- getSlotStroke
--- หา UIStroke ของ Slot ที่เลือกใน Hotbar
--- ========================
 local function getSlotStroke()
     local ok, stroke = pcall(function()
         local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
@@ -103,11 +100,9 @@ local function getSlotStroke()
             and playerGui.Main.HUD:FindFirstChild("Hotbar")
         if not hotbar then return nil end
 
-        -- ใช้ layoutorder / ชื่อ slot ตามที่เกมกำหนด
         local slotName = hotbarSlotNames[selectedSlot]
         local slot     = slotName and hotbar:FindFirstChild(slotName)
         if not slot then
-            -- fallback: หา slot ตาม LayoutOrder
             for _, child in ipairs(hotbar:GetChildren()) do
                 if child:IsA("GuiObject") and child.LayoutOrder == selectedSlot then
                     slot = child
@@ -120,17 +115,14 @@ local function getSlotStroke()
     return ok and stroke or nil
 end
 
--- isBlack: ตรวจว่า UIStroke สีดำ (ไม่ได้ถือ)
 local function isStrokeBlack(stroke)
-    if not stroke then return true end -- ถ้าหาไม่เจอ ถือว่าไม่ได้ถือ
+    if not stroke then return true end 
     local c = stroke.Color
     return c.R < 0.1 and c.G < 0.1 and c.B < 0.1
 end
 
 -- ========================
--- Auto Equip Logic (Event-based)
--- ฟัง GetPropertyChangedSignal("Color") ของ UIStroke
--- กดทันทีเมื่อสีเปลี่ยนเป็นดำ หยุดรอเมื่อสีเป็นขาว
+-- Auto Equip Logic
 -- ========================
 local function stopAutoEquip()
     autoEquipEnabled = false
@@ -145,8 +137,14 @@ local function stopAutoEquip()
 end
 
 local function doEquip()
+    if isEquipping then return end          
+    isEquipping = true                      
     local kc = slotKeyCode[selectedSlot]
-    if kc then pressKey(kc) end
+    if kc then
+        pressKey(kc)
+        task.wait(0.4)                      
+    end
+    isEquipping = false                      
 end
 
 local function startAutoEquip()
@@ -155,7 +153,6 @@ local function startAutoEquip()
     autoEquipEnabled = true
 
     autoEquipThread = task.spawn(function()
-        -- รอจนกว่าจะเจอ UIStroke (อาจต้องรอ GUI โหลด)
         local stroke
         while autoEquipEnabled do
             stroke = getSlotStroke()
@@ -164,24 +161,19 @@ local function startAutoEquip()
         end
         if not stroke then return end
 
-        -- กดครั้งแรกถ้าปัจจุบันสีดำอยู่แล้ว
         if isStrokeBlack(stroke) then
             doEquip()
         end
 
-        -- ฟัง Event: ทุกครั้งที่ Color เปลี่ยน
         strokeConn = stroke:GetPropertyChangedSignal("Color"):Connect(function()
             if not autoEquipEnabled then return end
-            -- สีเปลี่ยนเป็นดำ = หลุดมือ → กดทันที
             if isStrokeBlack(stroke) then
                 doEquip()
             end
-            -- สีเปลี่ยนเป็นขาว = ถืออยู่ → ไม่ทำอะไร รอ event ถัดไป
         end)
     end)
 end
 
--- Respawn: เชื่อมต่อ UIStroke ใหม่เพราะ GUI โหลดใหม่
 LocalPlayer.CharacterAdded:Connect(function()
     task.wait(2)
     if autoEquipEnabled then
@@ -212,7 +204,7 @@ local function updateFarmState()
 
     farmThread = task.spawn(function()
         while farmingEnabled do
-            local hasTarget      = false
+            local hasTarget    = false
             local activeBossCount = 0
 
             for bossName, enabled in pairs(targetBosses) do
@@ -228,13 +220,10 @@ local function updateFarmState()
             end
 
             if not hasTarget and activeBossCount > 0 then
-                -- บอสไม่เกิด → วาร์ปกลับ SavePosition
                 if useSavePosEnabled and savedPosition then
                     local hrp = getHRP()
                     if hrp then
                         hrp.CFrame = CFrame.new(savedPosition)
-                        -- [ใหม่] หลังวาร์ปกลับ ตรวจ UIStroke อีกรอบ
-                        -- รอให้ตัวละครลงพื้นก่อน แล้วค่อยตรวจ
                         task.wait(0.3)
                         if autoEquipEnabled then
                             local stroke = getSlotStroke()
@@ -252,9 +241,6 @@ local function updateFarmState()
     end)
 end
 
--- ========================
--- isBossActive: ตรวจว่ามีโมเดลบอสที่เปิดไว้โผล่อยู่ใน workspace จริงๆ
--- ========================
 local function isBossActive()
     for bossName, enabled in pairs(targetBosses) do
         if enabled and getBossPosition(bossName) then
@@ -266,8 +252,6 @@ end
 
 -- ========================
 -- Auto Skill Logic
--- รันเฉพาะเมื่อ isBossActive() = true (เจอโมเดลบอส)
--- หากไม่เจอบอส → หยุดรอ ไม่กดสกิล
 -- ========================
 local function stopAutoSkill()
     autoSkillEnabled = false
@@ -283,17 +267,21 @@ local function startAutoSkill()
     autoSkillThread = task.spawn(function()
         while autoSkillEnabled do
             if isBossActive() then
-                -- มีบอสโผล่ → กดสกิลได้
+                if isEquipping then
+                    task.wait(0.1)
+                    continue
+                end
                 local firedAny = false
                 for keyStr, isSelected in pairs(selectedSkills) do
                     if isSelected and Enum.KeyCode[keyStr] then
                         firedAny = true
-                        task.spawn(function() pressKey(Enum.KeyCode[keyStr]) end)
+                        if not isEquipping then
+                            task.spawn(function() pressKey(Enum.KeyCode[keyStr]) end)
+                        end
                     end
                 end
                 task.wait(firedAny and 0.3 or 0.1)
             else
-                -- ไม่มีบอส → รอโดยไม่กดสกิล
                 task.wait(0.5)
             end
         end
@@ -301,21 +289,29 @@ local function startAutoSkill()
 end
 
 -- ========================
--- Window Setup
+-- Window Setup (Customized Beautiful Color)
 -- ========================
 local Window = WindUI:CreateWindow({
-    Title       = "MonHub | Simple Farm",
+    Title       = "MonHub | AFS:OG V.3",
     Icon        = "swords",
-    Author      = "MonHub",
-    Folder      = "MonHubSimple",
-    Size        = UDim2.fromOffset(450, 520),
-    Theme       = "Dark",
+    Author      = "MonHub Developer",
+    Folder      = "MonHubPremium",
+    Size        = UDim2.fromOffset(460, 530),
+    Theme       = "Dark", -- พื้นหลังเข้ม ตัดกับนีออน
     Acrylic     = true,
     Transparent = true,
 })
 
+-- เปลี่ยนสีธีมหลักเป็น Electric Blue & Purple Neon ตามสไตล์โลโก้
+Window:EditTheme({
+    Accent = Color3.fromRGB(0, 162, 255), -- ฟ้าเรืองแสง
+    Primary = Color3.fromRGB(15, 15, 20),
+    Secondary = Color3.fromRGB(25, 25, 35),
+})
+
 local MainTab  = Window:Tab({ Title = "Main Farm",  Icon = "crosshair" })
 local SkillTab = Window:Tab({ Title = "Auto Skill", Icon = "zap" })
+local OtherTab = Window:Tab({ Title = "Other",      Icon = "more-horizontal" })
 
 -- ========================
 -- Main Farm UI
@@ -380,7 +376,7 @@ MainTab:Divider()
 
 MainTab:Dropdown({
     Title  = "เลือก Slot ที่จะ Equip",
-    Desc   = "ตรวจจาก UIStroke.Color ของ Slot (แม่นยำ 100%)",
+    Desc   = "ตรวจจาก UIStroke.Color ของ Slot",
     Icon   = "hash",
     Values = { "Slot 1", "Slot 2", "Slot 3", "Slot 4", "Slot 5" },
     Value  = "Slot 1",
@@ -392,14 +388,14 @@ MainTab:Dropdown({
 
 MainTab:Toggle({
     Title = "Auto Equip",
-    Desc  = "กดปุ่ม Slot อัตโนมัติ ตรวจสอบเมื่อตัวละครหยุดนิ่ง ไม่สแปมรัว",
+    Desc  = "กดปุ่ม Slot อัตโนมัติเมื่อหลุดมือ ไม่สแปมรัว",
     Icon  = "shield", Value = false,
     Callback = function(state)
         if state then
             startAutoEquip()
             WindUI:Notify({
                 Title   = "Auto Equip เปิดแล้ว",
-                Content = "Slot " .. tostring(selectedSlot) .. " | รอ UIStroke สีดำแล้วกดอัตโนมัติ",
+                Content = "Slot " .. tostring(selectedSlot) .. " | รอจับระบบสี UIStroke",
                 Duration = 3, Icon = "check-circle",
             })
         else
@@ -444,47 +440,90 @@ SkillTab:Toggle({
 })
 
 -- ========================
--- Floating Button (เสถียร ไม่บัค)
--- ใช้ Event-based แทน Sync Loop เพื่อลด race condition
+-- Other Tab (Discord Integration)
+-- ========================
+OtherTab:Button({
+    Title = "Join Discord Server",
+    Desc  = "คลิกเพื่อคัดลอกลิงก์และเปิดแอปพลิเคชัน Discord",
+    Icon  = "message-square",
+    Callback = function()
+        local discordLink = "https://discord.gg/EukxWETF"
+        
+        -- คัดลอกลง Clipboard อัตโนมัติสำหรับเอดิเตอร์ส่วนใหญ่
+        if setclipboard then
+            setclipboard(discordLink)
+        elseif toclipboard then
+            toclipboard(discordLink)
+        end
+        
+        -- ส่ง Request ไปยัง Discord Client ในเครื่อง (ถ้าตัวรันรองรับ)
+        pcall(function()
+            if request then
+                request({
+                    Url = "http://127.0.0.1:6463/rpc?v=1",
+                    Method = "POST",
+                    Headers = {
+                        ["Content-Type"] = "application/json",
+                        ["Origin"] = "https://discord.com"
+                    },
+                    Body = HttpService:JSONEncode({
+                        cmd = "INVITE_BROWSER",
+                        args = { code = "EukxWETF" },
+                        nonce = HttpService:GenerateGUID(false)
+                    })
+                })
+            end
+        end)
+
+        WindUI:Notify({
+            Title   = "Discord Link",
+            Content = "คัดลอกลิงก์เข้า Discord ไปยังคลิปบอร์ดแล้ว!",
+            Duration = 5,
+            Icon     = "check",
+        })
+    end,
+})
+
+-- ========================
+-- Floating Button Premium (เสถียร + พร้อมใส่ Logo)
 -- ========================
 local FloatGui    = Instance.new("ScreenGui")
-local FloatBtn    = Instance.new("TextButton")
+local FloatBtn    = Instance.new("ImageButton") -- เปลี่ยนเป็น ImageButton เพื่อใส่รูปภาพ
 local FloatCorner = Instance.new("UICorner")
 local FloatStroke = Instance.new("UIStroke")
 
-FloatGui.Name           = "MonHubFloat"
+FloatGui.Name           = "MonHubFloat_V3"
 FloatGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 FloatGui.ResetOnSpawn   = false
 FloatGui.DisplayOrder   = 999
 
--- ลอง parent ไปที่ CoreGui ก่อน fallback PlayerGui
 local coreGui = game:GetService("CoreGui")
 pcall(function() FloatGui.Parent = coreGui end)
 if not FloatGui.Parent or FloatGui.Parent ~= coreGui then
     FloatGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 end
 
-FloatBtn.Name             = "ToggleBtn"
+FloatBtn.Name             = "LogoToggleBtn"
 FloatBtn.Parent           = FloatGui
-FloatBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+FloatBtn.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
 FloatBtn.Position         = UDim2.new(0.05, 0, 0.2, 0)
-FloatBtn.Size             = UDim2.fromOffset(52, 52)
-FloatBtn.Text             = "M"
-FloatBtn.TextColor3       = Color3.fromRGB(255, 255, 255)
-FloatBtn.Font             = Enum.Font.GothamBold
-FloatBtn.TextSize         = 24
+FloatBtn.Size             = UDim2.fromOffset(55, 55)
+-- ใส่ ID รูปภาพโลโก้ตัว M สไตล์นีออน (หากต้องการเปลี่ยนเป็น ID ของคุณเองสามารถแทนที่เลขนี้ได้เลย)
+FloatBtn.Image            = "rbxassetid://13511116668" 
+FloatBtn.ScaleType        = Enum.ScaleType.Fit
 FloatBtn.Active           = true
 FloatBtn.ZIndex           = 99999
-FloatBtn.Visible          = false -- ซ่อนไว้ก่อน เปิดเมื่อ UI หลักถูกซ่อน
+FloatBtn.Visible          = false 
 
-FloatCorner.CornerRadius = UDim.new(0, 14)
+FloatCorner.CornerRadius = UDim.new(0, 16)
 FloatCorner.Parent       = FloatBtn
 
-FloatStroke.Color     = Color3.fromRGB(0, 150, 255)
-FloatStroke.Thickness = 2.5
+-- ทำขอบเรืองแสงสีฟ้าสลับม่วงตามโลโก้
+FloatStroke.Color     = Color3.fromRGB(0, 162, 255)
+FloatStroke.Thickness = 3
 FloatStroke.Parent    = FloatBtn
 
--- Drag Logic (เสถียร ไม่ค้าง)
+-- Drag Logic แบบสากล (นิ่ง ไม่หน่วง ไม่หลุดมือ)
 local dragging   = false
 local dragInput  = nil
 local dragStart  = nil
@@ -496,13 +535,12 @@ FloatBtn.InputBegan:Connect(function(input)
         dragging  = true
         dragStart = input.Position
         startPos  = FloatBtn.Position
-    end
-end)
-
-FloatBtn.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1
-    or input.UserInputType == Enum.UserInputType.Touch then
-        dragging = false
+        
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
     end
 end)
 
@@ -514,7 +552,7 @@ FloatBtn.InputChanged:Connect(function(input)
 end)
 
 UserInputService.InputChanged:Connect(function(input)
-    if dragging and dragInput and input == dragInput then
+    if dragging and input == dragInput then
         local delta = input.Position - dragStart
         FloatBtn.Position = UDim2.new(
             startPos.X.Scale, startPos.X.Offset + delta.X,
@@ -523,27 +561,19 @@ UserInputService.InputChanged:Connect(function(input)
     end
 end)
 
--- Toggle UI: ใช้ตัวแปร state แทนการอ่าน Window.Main.Visible
--- เพื่อหลีกเลี่ยง race condition
-local uiVisible = true -- เริ่มต้น UI หลักเปิดอยู่
-
-local function setUIVisible(visible)
-    uiVisible       = visible
-    FloatBtn.Visible = not visible
-end
+local uiVisible = true
 
 FloatBtn.MouseButton1Click:Connect(function()
-    if dragging then return end -- ป้องกัน click ติด drag
     uiVisible = not uiVisible
     Window:Toggle()
     FloatBtn.Visible = not uiVisible
 end)
 
--- Sync เบาๆ เผื่อ WindUI บังคับซ่อน/แสดง UI เอง (เช่นตอนโหลด)
+-- Loop Sync ตรวจจับสถานะหลักอย่างปลอดภัย
 task.spawn(function()
-    task.wait(1) -- รอ WindUI โหลดเสร็จก่อน
+    task.wait(1.5)
     while true do
-        task.wait(1)
+        task.wait(0.5)
         pcall(function()
             if Window and Window.Main then
                 local actualVisible = Window.Main.Visible
@@ -557,11 +587,11 @@ task.spawn(function()
 end)
 
 -- ========================
--- Ready
+-- Ready Notification
 -- ========================
 WindUI:Notify({
-    Title    = "MonHub โหลดสำเร็จ!",
-    Content  = "Auto Equip ตรวจ UIStroke.Color | Event-based ไม่สแปมรัว",
+    Title    = "MonHub | AFS:OG V.3",
+    Content  = "ระบบโหลดเสร็จสมบูรณ์! ธีมและปุ่มลอยได้รับการอัปเกรดแล้ว",
     Duration = 5,
     Icon     = "check",
 })
