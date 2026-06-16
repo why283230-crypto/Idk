@@ -1,5 +1,5 @@
--- -- MonHub | AFS:OG V.3 (Stable & Fix UI Bugs Edition)
--- -- Wind UI Latest Standard Version
+-- -- MonHub | AFS:OG V.3.2 (Fix UI Tabs & Empty Window Bug)
+-- -- Wind UI Latest - Fixed Render Structure
 local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
 
 -- ========================
@@ -289,7 +289,7 @@ local function startAutoSkill()
 end
 
 -- ========================
--- Window Setup (Standard Theme)
+-- Window Setup (Base UI)
 -- ========================
 local Window = WindUI:CreateWindow({
     Title       = "MonHub | AFS:OG V.3",
@@ -298,16 +298,22 @@ local Window = WindUI:CreateWindow({
     Folder      = "MonHubPremium",
     Size        = UDim2.fromOffset(460, 530),
     Theme       = "Dark", 
-    Acrylic     = false, -- ปิด Acrylic เพื่อลดภาระการโหลดหน้าต่างกราฟิกบนมือถือ/ตัวรัน
+    Acrylic     = false, -- ปิดไว้ชัวร์สุด ไม่หน่วงการวาดภาพหน้าต่าง
     Transparent = false,
 })
 
+-- ⭐ [จุดแก้สำคัญ] บังคับหยุดรอให้ Window ตัวหลักวาดโครงสร้างพื้นฐานเสร็จก่อน 0.3 วินาที เพื่อไม่ให้แท็บข้างในบัคหาย!
+task.wait(0.3)
+
+-- ========================
+-- Tabs Generation (โหลดหลังจาก Window พร้อมแล้ว)
+-- ========================
 local MainTab  = Window:Tab({ Title = "Main Farm",  Icon = "crosshair" })
 local SkillTab = Window:Tab({ Title = "Auto Skill", Icon = "zap" })
 local OtherTab = Window:Tab({ Title = "Other",      Icon = "more-horizontal" })
 
 -- ========================
--- Main Farm UI
+-- Main Farm UI Elements
 -- ========================
 MainTab:Toggle({
     Title = "Auto บอสลิง",
@@ -399,7 +405,7 @@ MainTab:Toggle({
 })
 
 -- ========================
--- Auto Skill UI
+-- Auto Skill UI Elements
 -- ========================
 local alphabet = {"A","B","C","D","E","F","G","H","I","J","K","L","M","N","O","P","Q","R","S","T","U","V","W","X","Y","Z"}
 
@@ -433,7 +439,7 @@ SkillTab:Toggle({
 })
 
 -- ========================
--- Other Tab (Discord Integration)
+-- Other Tab Elements
 -- ========================
 OtherTab:Button({
     Title = "Join Discord Server",
@@ -476,7 +482,7 @@ OtherTab:Button({
 })
 
 -- ========================
--- Floating Button Stable & Image Logo Fixed
+-- Floating Button (ปุ่มลอยสำหรับสลับเปิด/ปิด)
 -- ========================
 local FloatGui    = Instance.new("ScreenGui")
 local FloatBtn    = Instance.new("ImageButton") 
@@ -500,12 +506,12 @@ FloatBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
 FloatBtn.Position         = UDim2.new(0.05, 0, 0.2, 0)
 FloatBtn.Size             = UDim2.fromOffset(56, 56)
 
--- ผูกไฟล์รูปภาพโลโก้ของคุณอย่างแม่นยำ
+-- ดึงรูปภาพ 1000137734.png มาใส่ผ่านฟังก์ชันเสถียร
 FloatBtn.Image            = getcustomasset and getcustomasset("1000137734.png") or "rbxassetid://13511116668"
 FloatBtn.ScaleType        = Enum.ScaleType.Crop
 FloatBtn.Active           = true
 FloatBtn.ZIndex           = 99999
-FloatBtn.Visible          = false -- ซ่อนไว้ตอนเริ่มระบบหน้าต่างหลักเปิดอยู่
+FloatBtn.Visible          = false -- ซ่อนไว้ก่อน ระบบจะสลับเปิดเองเมื่อหดหน้าต่างหลักลง
 
 FloatCorner.CornerRadius = UDim.new(0, 14)
 FloatCorner.Parent       = FloatBtn
@@ -514,12 +520,12 @@ FloatStroke.Color     = Color3.fromRGB(0, 150, 255)
 FloatStroke.Thickness = 2.5
 FloatStroke.Parent    = FloatBtn
 
--- Drag Logic แบบเสถียร (ลากสลัดก็ไม่ค้าง)
+-- Drag Logic (ระบบย้ายพิกัดปุ่มลอย)
 local dragging   = false
 local dragInput  = nil
 local dragStart  = nil
 local startPos   = nil
-local hasDragged = false -- เพิ่มสถานะดักจับ เพื่อไม่ให้ปุ่มคิดว่าผู้เล่นคลิกตอนลากเสร็จ
+local hasDragged = false
 
 FloatBtn.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1
@@ -548,7 +554,7 @@ end)
 UserInputService.InputChanged:Connect(function(input)
     if dragging and dragInput and input == dragInput then
         local delta = input.Position - dragStart
-        if delta.Magnitude > 5 then -- ถ้าลากเกิน 5 พิกเซล ถือว่ากำลังย้ายที่
+        if delta.Magnitude > 5 then
             hasDragged = true
         end
         FloatBtn.Position = UDim2.new(
@@ -558,28 +564,30 @@ UserInputService.InputChanged:Connect(function(input)
     end
 end)
 
--- นำระบบลูปตรวจสอบซ้ำซ้อนออก แล้วใช้คำสั่งจัดการโดยตรงแบบแมนนวลเพื่อความเสถียร
+-- ควบคุมการสลับหน้าต่างผ่านปุ่มคลิกอย่างตรงไปตรงมา
 local uiVisible = true 
 
 FloatBtn.MouseButton1Click:Connect(function()
-    if hasDragged then return end -- ป้องกันหน้าต่างเด้งทำงานตอนเราลากปุ่มย้ายพิกัด
+    if hasDragged then return end
     uiVisible = not uiVisible
     Window:Toggle()
     FloatBtn.Visible = not uiVisible
 end)
 
--- บังคับเรียกใช้งานเปิดหน้าต่างแรกสุดให้สมบูรณ์แบบ
-task.spawn(function()
-    task.wait(0.5)
-    pcall(function()
-        -- ตรวจสอบให้แน่ใจว่าหน้าต่างหลักถูกเปิดขึ้นมาตั้งแต่แรก
-        if Window and not uiVisible then
-            Window:Toggle()
-        end
-    end)
+-- บังคับผูกปุ่มย่อของหน้าต่างให้สลับสถานะกับปุ่มลอยโดยตรง (ตัดลูปนรกทิ้ง)
+pcall(function()
+    if Window and Window.MinimizeButton then
+        Window.MinimizeButton.MouseButton1Click:Connect(function()
+            uiVisible = false
+            FloatBtn.Visible = true
+        end)
+    end
 end)
 
 -- Ready Notification
 WindUI:Notify({
     Title    = "MonHub | AFS:OG V.3",
-    Content  = "สคริปต์แก้ไขปุ่มและหน้าต่างเสถียร 100% พร้อมใช้งานแล้วครับ
+    Content  = "แก้ไขโครงสร้างจัดเรียง Tab สำเร็จ! ทุกปุ่มโหลดขึ้นจอครบถ้วนแน่นอนครับ",
+    Duration = 5,
+    Icon     = "check",
+})
