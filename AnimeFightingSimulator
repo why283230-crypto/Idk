@@ -494,7 +494,7 @@ OtherTab:Button({
 })
 
 -- ========================
--- Floating Button (แก้ไขให้เสถียร 100% โดยอิงระบบ Minimize ของ WindUI แท้)
+-- Floating Button (แก้ไขระบบสลับสถานะใหม่ เสถียรชัวร์ 100%)
 -- ========================
 local FloatGui    = Instance.new("ScreenGui")
 local FloatBtn    = Instance.new("TextButton")
@@ -523,7 +523,7 @@ FloatBtn.Font             = Enum.Font.GothamBold
 FloatBtn.TextSize         = 24
 FloatBtn.Active           = true
 FloatBtn.ZIndex           = 99999
-FloatBtn.Visible          = false -- เริ่มแรกเมนูเปิดอยู่ ปุ่มลอยเลยซ่อน
+FloatBtn.Visible          = false -- เริ่มต้นเมนูหลักเปิดอยู่ ปุ่มลอยจึงซ่อนตัวไว้ก่อน
 
 FloatCorner.CornerRadius = UDim.new(0, 14)
 FloatCorner.Parent       = FloatBtn
@@ -532,7 +532,7 @@ FloatStroke.Color     = Color3.fromRGB(0, 150, 255)
 FloatStroke.Thickness = 2.5
 FloatStroke.Parent    = FloatBtn
 
--- Drag Logic (ระบบลากปุ่มย้ายที่ได้สมูท)
+-- Drag Logic
 local dragging   = false
 local dragInput  = nil
 local dragStart  = nil
@@ -571,45 +571,28 @@ UserInputService.InputChanged:Connect(function(input)
     end
 end)
 
--- ควบคุมสลับการปิดเปิดด้วยคำสั่งหลัก และดักปุ่มย่อของแท้ใน WindUI
-local function openMenu()
-    FloatBtn.Visible = false
-    Window:Minimize() -- ขยายคืนกลับมา
-end
-
-local function closeMenu()
-    FloatBtn.Visible = true
-    -- ตรวจสอบหากเมนูหลักยังไม่ย่อ ให้สั่งย่อลงไป
-    if not Window.Minimized then
-        Window:Minimize()
-    end
-end
+-- ระบบสลับหน้าต่างเปิด/ปิด UI (ใช้การ Toggle ของ WindUI ร่วมกับการคุมแบบดักค่าตัวแปร)
+local menuOpenState = true
 
 FloatBtn.MouseButton1Click:Connect(function()
     if dragging then return end 
-    openMenu()
+    menuOpenState = true
+    Window:Toggle()     -- สั่งขยายหน้าต่างหลักกลับคืนมา
+    FloatBtn.Visible = false
 end)
 
--- ใช้สัญญาณจากระบบ WindUI โดยตรงเพื่อความเสถียร (ปลอดภัยกว่าการลูปหา Object)
-if Window.OnMinimize then
-    Window.OnMinimize:Connect(function(isMinimized)
-        if isMinimized then
-            closeMenu()
-        else
-            openMenu()
-        end
-    end)
-end
-
--- ดักสแกนตรวจสอบสำรองแบบเซฟสุด ๆ เผื่อกรณีตัวสคริปต์โดนบังคับ Minimize นอกระบบ
+-- ดักจับการสลับหน้าต่างผ่าน Background Loop ที่แม่นยำและไม่หน่วงเครื่อง
 task.spawn(function()
-    while task.wait(1) do
+    task.wait(1)
+    while true do
+        task.wait(0.3)
         pcall(function()
-            if Window then
-                if Window.Minimized then
-                    if not FloatBtn.Visible then FloatBtn.Visible = true end
-                else
-                    if FloatBtn.Visible then FloatBtn.Visible = false end
+            if Window and Window.Main then
+                -- เช็คโดยตรงจาก Property .Visible ของเฟรมหลักใน WindUI
+                local actualVisible = Window.Main.Visible
+                if actualVisible ~= menuOpenState then
+                    menuOpenState = actualVisible
+                    FloatBtn.Visible = not actualVisible
                 end
             end
         end)
