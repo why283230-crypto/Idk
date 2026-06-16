@@ -500,7 +500,7 @@ OtherTab:Button({
 })
 
 -- ========================
--- Floating Button (แก้ไขให้เสถียร 100% ไม่พึ่งพาฟังก์ชันหลอก)
+-- Floating Button (ปรับปรุงความเสถียร แยกสลับสถานะสมบูรณ์)
 -- ========================
 local FloatGui    = Instance.new("ScreenGui")
 local FloatBtn    = Instance.new("TextButton")
@@ -529,7 +529,7 @@ FloatBtn.Font             = Enum.Font.GothamBold
 FloatBtn.TextSize         = 24
 FloatBtn.Active           = true
 FloatBtn.ZIndex           = 99999
-FloatBtn.Visible          = false -- เริ่มต้นซ่อนไว้เพราะ UI หลักเปิดอยู่ตัวแรก
+FloatBtn.Visible          = false -- เริ่มแรกเมนูเปิดอยู่ ปุ่มลอยจึงซ่อนตัว
 
 FloatCorner.CornerRadius = UDim.new(0, 14)
 FloatCorner.Parent       = FloatBtn
@@ -538,7 +538,7 @@ FloatStroke.Color     = Color3.fromRGB(0, 150, 255)
 FloatStroke.Thickness = 2.5
 FloatStroke.Parent    = FloatBtn
 
--- Drag Logic
+-- Drag Logic (ระบบลากปุ่มลอย)
 local dragging   = false
 local dragInput  = nil
 local dragStart  = nil
@@ -577,49 +577,53 @@ UserInputService.InputChanged:Connect(function(input)
     end
 end)
 
--- ใช้ตัวแปรแกนหลักในการสลับสถานะเปิดปิด เพื่อไม่ให้สคริปต์สับสน
-local uiVisible = true
+-- ระบบเปิด-ปิดหน้าต่างและสลับปุ่มลอยที่ถูกต้องและไม่เออเร่อ
+local menuOpen = true
+
+local function toggleUI()
+    menuOpen = not menuOpen
+    Window:Toggle() -- ฟังก์ชันดั้งเดิมของ WindUI
+    FloatBtn.Visible = not menuOpen
+end
 
 FloatBtn.MouseButton1Click:Connect(function()
     if dragging then return end 
-    uiVisible = not uiVisible
-    Window:Toggle() -- สั่งย่อ/ขยาย UI หลักผ่านคำสั่ง WindUI
-    FloatBtn.Visible = not uiVisible -- ถ้าหน้าต่างย่อ ปุ่มลอยก็ต้องโชว์
+    toggleUI()
 end)
 
--- ดักจับโครงสร้างวัตถุจริงของ WindUI บน PlayerGui เพื่อแอบตรวจสอบสถานะแท้จริง (เสถียรที่สุด)
+-- ตรวจหาอินสแตนซ์หน้าจอจริงในเกมเพื่อคอย Sync สถานะปุ่มลอยหากผู้ใช้ไปกดปุ่มย่อในแถบเมนูหลักเอง
 task.spawn(function()
-    task.wait(1.5) -- รอ UI บิ้วท์อัพเสร็จสมบูรณ์
-    
-    local windMainContainer = nil
+    task.wait(1.5)
     local playerGui = LocalPlayer:WaitForChild("PlayerGui")
+    local actualMainFrame = nil
     
-    -- ลูปตามล่าหาวัตถุ ScreenGui ของ WindUI จริงๆ
-    for _, gui in ipairs(playerGui:GetChildren()) do
-        if gui:IsA("ScreenGui") and gui:FindFirstChild("Main") and gui.Main:FindFirstChild("Navigation") then
-            windMainContainer = gui.Main
-            break
+    -- ค้นหาเฟรม UI หลักของตัว WindUI บนหน้าจอโดยตรง
+    local function findMainFrame()
+        for _, gui in ipairs(playerGui:GetChildren()) do
+            if gui:IsA("ScreenGui") and gui:FindFirstChild("Main") then
+                local frame = gui.Main
+                if frame:FindFirstChild("Navigation") or frame:FindFirstChild("Content") then
+                    return frame
+                end
+            end
         end
+        return nil
     end
-    
-    -- หากเจอตู้คอนเทนเนอร์หลัก จะคอยฟังสัญญาณการปิด/เปิดจริงเพื่อซิงค์กับปุ่มลอยทันที
+
+    actualMainFrame = findMainFrame()
+
     while true do
-        task.wait(0.4)
+        task.wait(0.5)
         pcall(function()
-            if windMainContainer then
-                local isCurrentlyVisible = windMainContainer.Visible
-                if isCurrentlyVisible ~= uiVisible then
-                    uiVisible = isCurrentlyVisible
-                    FloatBtn.Visible = not isCurrentlyVisible
+            if actualMainFrame then
+                -- ตรวจสอบจากการแสดงผลจริงบนหน้าจอของผู้เล่น
+                local isVisible = actualMainFrame.Visible and (actualMainFrame.Size.Y.Offset > 50)
+                if isVisible ~= menuOpen then
+                    menuOpen = isVisible
+                    FloatBtn.Visible = not isVisible
                 end
             else
-                -- ค้นหาสำรองเผื่อ UI โดนรีเซ็ตเมื่อตัวละครตาย
-                for _, gui in ipairs(playerGui:GetChildren()) do
-                    if gui:IsA("ScreenGui") and gui:FindFirstChild("Main") and gui.Main:FindFirstChild("Navigation") then
-                        windMainContainer = gui.Main
-                        break
-                    end
-                end
+                actualMainFrame = findMainFrame()
             end
         end)
     end
@@ -628,7 +632,7 @@ end)
 -- Ready Notification
 WindUI:Notify({
     Title    = "MonHub โหลดสำเร็จ!",
-    Content = "แก้ไขระบบปุ่มลอย และเพิ่มหมวดหมู่ Other เรียบร้อยแล้วครับ",
+    Content  = "แก้ไขระบบปุ่มลอย และเพิ่มหมวดหมู่ Other เรียบร้อยแล้วครับ",
     Duration = 5,
     Icon     = "check",
 })
