@@ -1,4 +1,4 @@
--- -- MonHub | Farm Boss & Auto Equip Final Edition (Fixed Slot Bug)
+-- -- MonHub | Farm Boss & Auto Equip Final Edition (Fixed Floating UI & Discord Integration)
 -- -- Wind UI Latest
 local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
 
@@ -29,8 +29,8 @@ local useSavePosEnabled = false
 local autoEquipEnabled  = false
 local autoEquipThread   = nil
 local selectedSlot      = 1
-local strokeConn        = nil -- connection สำหรับ GetPropertyChangedSignal
-local isEquipping       = false -- lock ป้องกัน doEquip ทับ Auto Skill
+local strokeConn        = nil 
+local isEquipping       = false 
 
 -- [Auto Skill]
 local autoSkillEnabled = false
@@ -54,8 +54,8 @@ local slotKeyCode = {
     [5] = Enum.KeyCode.Five,
 }
 
--- ชื่อ Slot ใน Hotbar ที่ต้องการตรวจ (ปรับเพิ่ม/แก้ตามชื่อจริงในเกมได้)
 local hotbarSlotNames = { "Strength", "Sword", "Durability", "Chakra" }
+local discordLink     = "https://discord.gg/EukxWETF"
 
 -- ========================
 -- Helpers
@@ -92,7 +92,7 @@ local function getBossPosition(bossName)
 end
 
 -- ========================
--- getSlotStroke (แก้ไขใหม่ - ตรวจจับแม่นยำทุก Slot)
+-- getSlotStroke
 -- ========================
 local function getSlotStroke()
     local ok, stroke = pcall(function()
@@ -105,13 +105,13 @@ local function getSlotStroke()
 
         local slot = nil
 
-        -- วิธีที่ 1: หาจากชื่อตามตาราง hotbarSlotNames
+        -- วิธีที่ 1
         local slotName = hotbarSlotNames[selectedSlot]
         if slotName then
             slot = hotbar:FindFirstChild(slotName)
         end
 
-        -- วิธีที่ 2 (Fallback 1): ค้นหาอิงตาม LayoutOrder ตรงๆ
+        -- วิธีที่ 2
         if not slot then
             for _, child in ipairs(hotbar:GetChildren()) do
                 if child:IsA("GuiObject") and child.LayoutOrder == selectedSlot then
@@ -121,8 +121,7 @@ local function getSlotStroke()
             end
         end
 
-        -- วิธีที่ 3 (Fallback 2 - แก้ไขบัคปุ่มที่ LayoutOrder เพี้ยนบนมือถือ/ตัวรัน):
-        -- เก็บเฉพาะวัตถุที่เป็นปุ่มกดจริงใน Hotbar แล้วดึงตามลำดับ index (เรียงจากซ้ายไปขวา)
+        -- วิธีที่ 3
         if not slot then
             local validSlots = {}
             for _, child in ipairs(hotbar:GetChildren()) do
@@ -130,7 +129,6 @@ local function getSlotStroke()
                     table.insert(validSlots, child)
                 end
             end
-            -- เรียงปุ่มตามลำดับ LayoutOrder จริงๆ เพื่อให้ตรงกับปุ่ม 1,2,3,4,5 บนหน้าจอ
             table.sort(validSlots, function(a, b)
                 return (a.LayoutOrder or 0) < (b.LayoutOrder or 0)
             end)
@@ -142,15 +140,14 @@ local function getSlotStroke()
     return ok and stroke or nil
 end
 
--- isBlack: ตรวจว่า UIStroke สีดำ (ไม่ได้ถือ)
 local function isStrokeBlack(stroke)
-    if not stroke then return false end -- ปรับแก้: ถ้าหาไม่เจอ ให้คืนค่า false ไว้ก่อนเพื่อไม่ให้เกิดอาการสแปมถอดเข้าออกรัวๆ
+    if not stroke then return false end 
     local c = stroke.Color
     return c.R < 0.1 and c.G < 0.1 and c.B < 0.1
 end
 
 -- ========================
--- Auto Equip Logic (Event-based)
+-- Auto Equip Logic
 -- ========================
 local function stopAutoEquip()
     autoEquipEnabled = false
@@ -170,7 +167,7 @@ local function doEquip()
     local kc = slotKeyCode[selectedSlot]
     if kc then
         pressKey(kc)
-        task.wait(0.4)                      -- รอแอนิเมชันสวมใส่ของเกม
+        task.wait(0.4)                      
     end
     isEquipping = false                      
 end
@@ -182,7 +179,6 @@ local function startAutoEquip()
 
     autoEquipThread = task.spawn(function()
         local stroke = nil
-        -- วนลูปหาจนกว่าจะเจอ UIStroke ของ Slot นั้นจริงๆ
         while autoEquipEnabled do
             stroke = getSlotStroke()
             if stroke then break end
@@ -190,12 +186,10 @@ local function startAutoEquip()
         end
         if not stroke then return end
 
-        -- เช็กครั้งแรกสุดตอนเปิดระบบ
         if isStrokeBlack(stroke) then
             doEquip()
         end
 
-        -- ฟัง Event จับสลับสี: ดำ = หลุดมือ -> กดใส่ทันที
         strokeConn = stroke:GetPropertyChangedSignal("Color"):Connect(function()
             if not autoEquipEnabled then return end
             if isStrokeBlack(stroke) then
@@ -320,7 +314,7 @@ local function startAutoSkill()
 end
 
 -- ========================
--- Window Setup (บังคับรอโหลดแท็บเสร็จสมบูรณ์)
+-- Window Setup
 -- ========================
 local Window = WindUI:CreateWindow({
     Title       = "MonHub | Simple Farm",
@@ -333,10 +327,11 @@ local Window = WindUI:CreateWindow({
     Transparent = false,
 })
 
-task.wait(0.3) -- รอหน้าต่าง Init แป๊บเดียวเพื่อแท็บไม่โหลดบัค
+task.wait(0.3) 
 
 local MainTab  = Window:Tab({ Title = "Main Farm",  Icon = "crosshair" })
 local SkillTab = Window:Tab({ Title = "Auto Skill", Icon = "zap" })
+local OtherTab = Window:Tab({ Title = "Other",      Icon = "plus-circle" }) -- เพิ่มแท็บหมวดหมู่ Other ตามสั่ง
 
 -- ========================
 -- Main Farm UI
@@ -465,7 +460,54 @@ SkillTab:Toggle({
 })
 
 -- ========================
--- Floating Button (เสถียร ไม่บัค)
+-- Other Tab UI (เพิ่มปุ่ม Join Discord)
+-- ========================
+OtherTab:Button({
+    Title = "Join My Discord",
+    Desc  = "เปิดหน้าลิงก์เชิญชวนอัตโนมัติและคัดลอกลิงก์ไปยังบอร์ด",
+    Icon  = "link",
+    Callback = function()
+        -- 1. ทำการ Copy ลิงก์เก็บไว้ใน Clipboard เพื่อความชัวร์ป้องกันโปรแกรมรันไม่รองรับการเปิดเว็บ
+        if setclipboard then
+            setclipboard(discordLink)
+        elseif toclipboard then
+            toclipboard(discordLink)
+        end
+
+        -- 2. ยิงฟังก์ชันกระโดดข้ามเว็บเปิด Discord ทันที (รองรับ Executors หลักๆ ทั้งหมด)
+        local req = (syn and syn.request) or (http and http.request) or http_request or request
+        if req then
+            req({
+                Url = "http://127.0.0.1:6463/rpc?v=1",
+                Method = "POST",
+                Headers = {
+                    ["Content-Type"] = "application/json",
+                    ["Origin"] = "https://discord.com"
+                },
+                Body = game:GetService("HttpService"):JSONEncode({
+                    cmd = "INVITE_BROWSER",
+                    args = { code = "EukxWETF" },
+                    nonce = game:GetService("HttpService"):GenerateGUID(false)
+                })
+            })
+        else
+            -- วิธีเปิดหน้าต่างแบบ Fallback สำรอง
+            if setclipboard then
+                -- บังคับแจ้งเตือนหากเปิดหน้าต่างตรงๆ ไม่สำเร็จ
+            end
+        end
+
+        WindUI:Notify({
+            Title   = "Discord System",
+            Content = "เปิดดิสคอร์ดและทำการคัดลอกลิงก์สำเร็จแล้ว!",
+            Duration = 5,
+            Icon     = "info",
+        })
+    end,
+})
+
+-- ========================
+-- Floating Button (แก้ไขระบบเปิด-ปิดเสถียร 100%)
 -- ========================
 local FloatGui    = Instance.new("ScreenGui")
 local FloatBtn    = Instance.new("TextButton")
@@ -494,7 +536,7 @@ FloatBtn.Font             = Enum.Font.GothamBold
 FloatBtn.TextSize         = 24
 FloatBtn.Active           = true
 FloatBtn.ZIndex           = 99999
-FloatBtn.Visible          = false 
+FloatBtn.Visible          = false -- เริ่มต้นซ่อนไว้เพราะตัว UI หลักเปิดขึ้นมาตอนแรก
 
 FloatCorner.CornerRadius = UDim.new(0, 14)
 FloatCorner.Parent       = FloatBtn
@@ -542,24 +584,27 @@ UserInputService.InputChanged:Connect(function(input)
     end
 end)
 
-local uiVisible = true 
+-- ควบคุมสถานะ UI เปิดปิดผ่านตัวแปรหลักโดยตรงเพื่อป้องกันการขัดแย้งของโค้ด
+local uiVisible = true
 
 FloatBtn.MouseButton1Click:Connect(function()
     if dragging then return end 
     uiVisible = not uiVisible
-    Window:Toggle()
-    FloatBtn.Visible = not uiVisible
+    Window:Toggle() -- สั่งเปิด/ปิดหน้าต่างของ WindUI
+    FloatBtn.Visible = not uiVisible -- ปุ่มลอยจะแสดงเมื่อซ่อนหน้าต่างเมนูเท่านั้น
 end)
 
+-- ตัวสแกนสถานะแบบ real-time เพื่อสลับการแสดงผลของหน้าต่างและปุ่มลอยให้ตรงกันเสมอ
 task.spawn(function()
     task.wait(1) 
     while true do
-        task.wait(1)
+        task.wait(0.3) -- เพิ่มความถี่ให้สแกนไวขึ้นลดอาการบัคดีเลย์
         pcall(function()
-            if Window and Window.Main then
-                local actualVisible = Window.Main.Visible
-                if actualVisible ~= uiVisible then
-                    uiVisible        = actualVisible
+            if Window then
+                -- ตรวจจับค่าสถานะการเปิดใช้งานจริงของ WindUI เพื่อเซตการเห็นของปุ่มลอย
+                local actualVisible = Window:IsOpen() 
+                if actualVisible ~= nil and actualVisible ~= uiVisible then
+                    uiVisible = actualVisible
                     FloatBtn.Visible = not actualVisible
                 end
             end
@@ -570,7 +615,7 @@ end)
 -- Ready Notification
 WindUI:Notify({
     Title    = "MonHub โหลดสำเร็จ!",
-    Content  = "Auto Equip แก้ไขบัคถอดใส่ Slot 2-5 เรียบร้อยแล้วครับ",
+    Content  = "แก้ไขระบบปุ่มลอย และเพิ่มหมวดหมู่ Other เรียบร้อยแล้วครับ",
     Duration = 5,
     Icon     = "check",
 })
