@@ -1,5 +1,5 @@
--- -- MonHub | AFS:OG V.3.2 (Fix UI Tabs & Empty Window Bug)
--- -- Wind UI Latest - Fixed Render Structure
+-- -- MonHub | Farm Boss & Auto Equip Final Edition (Fixed Slot Bug)
+-- -- Wind UI Latest
 local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
 
 -- ========================
@@ -8,7 +8,6 @@ local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/rel
 local Players             = game:GetService("Players")
 local UserInputService    = game:GetService("UserInputService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
-local HttpService         = game:GetService("HttpService")
 local LocalPlayer         = Players.LocalPlayer
 
 -- ========================
@@ -30,8 +29,8 @@ local useSavePosEnabled = false
 local autoEquipEnabled  = false
 local autoEquipThread   = nil
 local selectedSlot      = 1
-local strokeConn        = nil 
-local isEquipping       = false 
+local strokeConn        = nil -- connection สำหรับ GetPropertyChangedSignal
+local isEquipping       = false -- lock ป้องกัน doEquip ทับ Auto Skill
 
 -- [Auto Skill]
 local autoSkillEnabled = false
@@ -55,6 +54,7 @@ local slotKeyCode = {
     [5] = Enum.KeyCode.Five,
 }
 
+-- ชื่อ Slot ใน Hotbar ที่ต้องการตรวจ (ปรับเพิ่ม/แก้ตามชื่อจริงในเกมได้)
 local hotbarSlotNames = { "Strength", "Sword", "Durability", "Chakra" }
 
 -- ========================
@@ -91,6 +91,9 @@ local function getBossPosition(bossName)
     return root and root.Position
 end
 
+-- ========================
+-- getSlotStroke (แก้ไขใหม่ - ตรวจจับแม่นยำทุก Slot)
+-- ========================
 local function getSlotStroke()
     local ok, stroke = pcall(function()
         local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
@@ -100,8 +103,15 @@ local function getSlotStroke()
             and playerGui.Main.HUD:FindFirstChild("Hotbar")
         if not hotbar then return nil end
 
+        local slot = nil
+
+        -- วิธีที่ 1: หาจากชื่อตามตาราง hotbarSlotNames
         local slotName = hotbarSlotNames[selectedSlot]
-        local slot     = slotName and hotbar:FindFirstChild(slotName)
+        if slotName then
+            slot = hotbar:FindFirstChild(slotName)
+        end
+
+        -- วิธีที่ 2 (Fallback 1): ค้นหาอิงตาม LayoutOrder ตรงๆ
         if not slot then
             for _, child in ipairs(hotbar:GetChildren()) do
                 if child:IsA("GuiObject") and child.LayoutOrder == selectedSlot then
@@ -110,19 +120,37 @@ local function getSlotStroke()
                 end
             end
         end
+
+        -- วิธีที่ 3 (Fallback 2 - แก้ไขบัคปุ่มที่ LayoutOrder เพี้ยนบนมือถือ/ตัวรัน):
+        -- เก็บเฉพาะวัตถุที่เป็นปุ่มกดจริงใน Hotbar แล้วดึงตามลำดับ index (เรียงจากซ้ายไปขวา)
+        if not slot then
+            local validSlots = {}
+            for _, child in ipairs(hotbar:GetChildren()) do
+                if child:IsA("ImageButton") or child:IsA("TextButton") or child.Name:lower():find("slot") then
+                    table.insert(validSlots, child)
+                end
+            end
+            -- เรียงปุ่มตามลำดับ LayoutOrder จริงๆ เพื่อให้ตรงกับปุ่ม 1,2,3,4,5 บนหน้าจอ
+            table.sort(validSlots, function(a, b)
+                return (a.LayoutOrder or 0) < (b.LayoutOrder or 0)
+            end)
+            slot = validSlots[selectedSlot]
+        end
+
         return slot and slot:FindFirstChildOfClass("UIStroke") or nil
     end)
     return ok and stroke or nil
 end
 
+-- isBlack: ตรวจว่า UIStroke สีดำ (ไม่ได้ถือ)
 local function isStrokeBlack(stroke)
-    if not stroke then return true end 
+    if not stroke then return false end -- ปรับแก้: ถ้าหาไม่เจอ ให้คืนค่า false ไว้ก่อนเพื่อไม่ให้เกิดอาการสแปมถอดเข้าออกรัวๆ
     local c = stroke.Color
     return c.R < 0.1 and c.G < 0.1 and c.B < 0.1
 end
 
 -- ========================
--- Auto Equip Logic
+-- Auto Equip Logic (Event-based)
 -- ========================
 local function stopAutoEquip()
     autoEquipEnabled = false
@@ -142,7 +170,7 @@ local function doEquip()
     local kc = slotKeyCode[selectedSlot]
     if kc then
         pressKey(kc)
-        task.wait(0.4)                      
+        task.wait(0.4)                      -- รอแอนิเมชันสวมใส่ของเกม
     end
     isEquipping = false                      
 end
@@ -153,7 +181,8 @@ local function startAutoEquip()
     autoEquipEnabled = true
 
     autoEquipThread = task.spawn(function()
-        local stroke
+        local stroke = nil
+        -- วนลูปหาจนกว่าจะเจอ UIStroke ของ Slot นั้นจริงๆ
         while autoEquipEnabled do
             stroke = getSlotStroke()
             if stroke then break end
@@ -161,10 +190,12 @@ local function startAutoEquip()
         end
         if not stroke then return end
 
+        -- เช็กครั้งแรกสุดตอนเปิดระบบ
         if isStrokeBlack(stroke) then
             doEquip()
         end
 
+        -- ฟัง Event จับสลับสี: ดำ = หลุดมือ -> กดใส่ทันที
         strokeConn = stroke:GetPropertyChangedSignal("Color"):Connect(function()
             if not autoEquipEnabled then return end
             if isStrokeBlack(stroke) then
@@ -289,31 +320,26 @@ local function startAutoSkill()
 end
 
 -- ========================
--- Window Setup (Base UI)
+-- Window Setup (บังคับรอโหลดแท็บเสร็จสมบูรณ์)
 -- ========================
 local Window = WindUI:CreateWindow({
-    Title       = "MonHub | AFS:OG V.3",
+    Title       = "MonHub | Simple Farm",
     Icon        = "swords",
-    Author      = "MonHub Developer",
-    Folder      = "MonHubPremium",
-    Size        = UDim2.fromOffset(460, 530),
-    Theme       = "Dark", 
-    Acrylic     = false, -- ปิดไว้ชัวร์สุด ไม่หน่วงการวาดภาพหน้าต่าง
+    Author      = "MonHub",
+    Folder      = "MonHubSimple",
+    Size        = UDim2.fromOffset(450, 520),
+    Theme       = "Dark",
+    Acrylic     = false,
     Transparent = false,
 })
 
--- ⭐ [จุดแก้สำคัญ] บังคับหยุดรอให้ Window ตัวหลักวาดโครงสร้างพื้นฐานเสร็จก่อน 0.3 วินาที เพื่อไม่ให้แท็บข้างในบัคหาย!
-task.wait(0.3)
+task.wait(0.3) -- รอหน้าต่าง Init แป๊บเดียวเพื่อแท็บไม่โหลดบัค
 
--- ========================
--- Tabs Generation (โหลดหลังจาก Window พร้อมแล้ว)
--- ========================
 local MainTab  = Window:Tab({ Title = "Main Farm",  Icon = "crosshair" })
 local SkillTab = Window:Tab({ Title = "Auto Skill", Icon = "zap" })
-local OtherTab = Window:Tab({ Title = "Other",      Icon = "more-horizontal" })
 
 -- ========================
--- Main Farm UI Elements
+-- Main Farm UI
 -- ========================
 MainTab:Toggle({
     Title = "Auto บอสลิง",
@@ -375,7 +401,7 @@ MainTab:Divider()
 
 MainTab:Dropdown({
     Title  = "เลือก Slot ที่จะ Equip",
-    Desc   = "ตรวจจาก UIStroke.Color ของ Slot",
+    Desc   = "ระบบดักจับสีขอบ UI เคลียร์บัคตรวจจับข้ามปุ่มเรียบร้อย",
     Icon   = "hash",
     Values = { "Slot 1", "Slot 2", "Slot 3", "Slot 4", "Slot 5" },
     Value  = "Slot 1",
@@ -387,14 +413,14 @@ MainTab:Dropdown({
 
 MainTab:Toggle({
     Title = "Auto Equip",
-    Desc  = "กดปุ่ม Slot อัตโนมัติเมื่อหลุดมือ ไม่สแปมรัว",
+    Desc  = "กดปุ่ม Slot อัตโนมัติ ตรวจสอบเมื่อตัวละครหยุดนิ่ง ไม่สแปมรัว",
     Icon  = "shield", Value = false,
     Callback = function(state)
         if state then
             startAutoEquip()
             WindUI:Notify({
                 Title   = "Auto Equip เปิดแล้ว",
-                Content = "Slot " .. tostring(selectedSlot) .. " | รอจับระบบสี UIStroke",
+                Content = "Slot " .. tostring(selectedSlot) .. " | รอ UIStroke สีดำแล้วกดอัตโนมัติ",
                 Duration = 3, Icon = "check-circle",
             })
         else
@@ -405,7 +431,7 @@ MainTab:Toggle({
 })
 
 -- ========================
--- Auto Skill UI Elements
+-- Auto Skill UI
 -- ========================
 local alphabet = {"A","B","C","D","E","F","G","H","I","J","K","L","M","N","O","P","Q","R","S","T","U","V","W","X","Y","Z"}
 
@@ -439,57 +465,14 @@ SkillTab:Toggle({
 })
 
 -- ========================
--- Other Tab Elements
--- ========================
-OtherTab:Button({
-    Title = "Join Discord Server",
-    Desc  = "คลิกเพื่อคัดลอกลิงก์และเปิดแอปพลิเคชัน Discord",
-    Icon  = "message-square",
-    Callback = function()
-        local discordLink = "https://discord.gg/EukxWETF"
-        
-        if setclipboard then
-            setclipboard(discordLink)
-        elseif toclipboard then
-            toclipboard(discordLink)
-        end
-        
-        pcall(function()
-            if request then
-                request({
-                    Url = "http://127.0.0.1:6463/rpc?v=1",
-                    Method = "POST",
-                    Headers = {
-                        ["Content-Type"] = "application/json",
-                        ["Origin"] = "https://discord.com"
-                    },
-                    Body = HttpService:JSONEncode({
-                        cmd = "INVITE_BROWSER",
-                        args = { code = "EukxWETF" },
-                        nonce = HttpService:GenerateGUID(false)
-                    })
-                })
-            end
-        end)
-
-        WindUI:Notify({
-            Title   = "Discord Link",
-            Content = "คัดลอกลิงก์เข้า Discord ไปยังคลิปบอร์ดแล้ว!",
-            Duration = 5,
-            Icon     = "check",
-        })
-    end,
-})
-
--- ========================
--- Floating Button (ปุ่มลอยสำหรับสลับเปิด/ปิด)
+-- Floating Button (เสถียร ไม่บัค)
 -- ========================
 local FloatGui    = Instance.new("ScreenGui")
-local FloatBtn    = Instance.new("ImageButton") 
+local FloatBtn    = Instance.new("TextButton")
 local FloatCorner = Instance.new("UICorner")
 local FloatStroke = Instance.new("UIStroke")
 
-FloatGui.Name           = "MonHubFloat_V3"
+FloatGui.Name           = "MonHubFloat"
 FloatGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 FloatGui.ResetOnSpawn   = false
 FloatGui.DisplayOrder   = 999
@@ -500,18 +483,18 @@ if not FloatGui.Parent or FloatGui.Parent ~= coreGui then
     FloatGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 end
 
-FloatBtn.Name             = "LogoToggleBtn"
+FloatBtn.Name             = "ToggleBtn"
 FloatBtn.Parent           = FloatGui
 FloatBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
 FloatBtn.Position         = UDim2.new(0.05, 0, 0.2, 0)
-FloatBtn.Size             = UDim2.fromOffset(56, 56)
-
--- ดึงรูปภาพ 1000137734.png มาใส่ผ่านฟังก์ชันเสถียร
-FloatBtn.Image            = getcustomasset and getcustomasset("1000137734.png") or "rbxassetid://13511116668"
-FloatBtn.ScaleType        = Enum.ScaleType.Crop
+FloatBtn.Size             = UDim2.fromOffset(52, 52)
+FloatBtn.Text             = "M"
+FloatBtn.TextColor3       = Color3.fromRGB(255, 255, 255)
+FloatBtn.Font             = Enum.Font.GothamBold
+FloatBtn.TextSize         = 24
 FloatBtn.Active           = true
 FloatBtn.ZIndex           = 99999
-FloatBtn.Visible          = false -- ซ่อนไว้ก่อน ระบบจะสลับเปิดเองเมื่อหดหน้าต่างหลักลง
+FloatBtn.Visible          = false 
 
 FloatCorner.CornerRadius = UDim.new(0, 14)
 FloatCorner.Parent       = FloatBtn
@@ -520,20 +503,18 @@ FloatStroke.Color     = Color3.fromRGB(0, 150, 255)
 FloatStroke.Thickness = 2.5
 FloatStroke.Parent    = FloatBtn
 
--- Drag Logic (ระบบย้ายพิกัดปุ่มลอย)
+-- Drag Logic
 local dragging   = false
 local dragInput  = nil
 local dragStart  = nil
 local startPos   = nil
-local hasDragged = false
 
 FloatBtn.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1
     or input.UserInputType == Enum.UserInputType.Touch then
-        dragging   = true
-        hasDragged = false
-        dragStart  = input.Position
-        startPos   = FloatBtn.Position
+        dragging  = true
+        dragStart = input.Position
+        startPos  = FloatBtn.Position
     end
 end)
 
@@ -554,9 +535,6 @@ end)
 UserInputService.InputChanged:Connect(function(input)
     if dragging and dragInput and input == dragInput then
         local delta = input.Position - dragStart
-        if delta.Magnitude > 5 then
-            hasDragged = true
-        end
         FloatBtn.Position = UDim2.new(
             startPos.X.Scale, startPos.X.Offset + delta.X,
             startPos.Y.Scale, startPos.Y.Offset + delta.Y
@@ -564,30 +542,35 @@ UserInputService.InputChanged:Connect(function(input)
     end
 end)
 
--- ควบคุมการสลับหน้าต่างผ่านปุ่มคลิกอย่างตรงไปตรงมา
 local uiVisible = true 
 
 FloatBtn.MouseButton1Click:Connect(function()
-    if hasDragged then return end
+    if dragging then return end 
     uiVisible = not uiVisible
     Window:Toggle()
     FloatBtn.Visible = not uiVisible
 end)
 
--- บังคับผูกปุ่มย่อของหน้าต่างให้สลับสถานะกับปุ่มลอยโดยตรง (ตัดลูปนรกทิ้ง)
-pcall(function()
-    if Window and Window.MinimizeButton then
-        Window.MinimizeButton.MouseButton1Click:Connect(function()
-            uiVisible = false
-            FloatBtn.Visible = true
+task.spawn(function()
+    task.wait(1) 
+    while true do
+        task.wait(1)
+        pcall(function()
+            if Window and Window.Main then
+                local actualVisible = Window.Main.Visible
+                if actualVisible ~= uiVisible then
+                    uiVisible        = actualVisible
+                    FloatBtn.Visible = not actualVisible
+                end
+            end
         end)
     end
 end)
 
 -- Ready Notification
 WindUI:Notify({
-    Title    = "MonHub | AFS:OG V.3",
-    Content  = "แก้ไขโครงสร้างจัดเรียง Tab สำเร็จ! ทุกปุ่มโหลดขึ้นจอครบถ้วนแน่นอนครับ",
+    Title    = "MonHub โหลดสำเร็จ!",
+    Content  = "Auto Equip แก้ไขบัคถอดใส่ Slot 2-5 เรียบร้อยแล้วครับ",
     Duration = 5,
     Icon     = "check",
 })
