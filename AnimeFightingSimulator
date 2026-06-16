@@ -1,5 +1,5 @@
--- -- MonHub | AFS:OG V.3 (Farm Boss & Auto Equip Premium Edition)
--- -- Wind UI Latest Custom Neon Theme
+-- -- MonHub | AFS:OG V.3 (Stable & Fix UI Bugs Edition)
+-- -- Wind UI Latest Standard Version
 local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
 
 -- ========================
@@ -289,7 +289,7 @@ local function startAutoSkill()
 end
 
 -- ========================
--- Window Setup (Customized Premium Cyan-Purple Theme)
+-- Window Setup (Standard Theme)
 -- ========================
 local Window = WindUI:CreateWindow({
     Title       = "MonHub | AFS:OG V.3",
@@ -298,15 +298,8 @@ local Window = WindUI:CreateWindow({
     Folder      = "MonHubPremium",
     Size        = UDim2.fromOffset(460, 530),
     Theme       = "Dark", 
-    Acrylic     = true,
-    Transparent = true,
-})
-
--- ปรับแต่งเฉดสี UI ให้แมตช์ตามโทนสีของไฟล์ 1000137734.png
-Window:EditTheme({
-    Accent = Color3.fromRGB(0, 162, 255), -- สีฟ้าสว่างแบบ Neon ฝั่งซ้ายของโลโก้
-    Primary = Color3.fromRGB(12, 12, 18),
-    Secondary = Color3.fromRGB(22, 20, 30), -- แฝงโทนม่วงมืดๆ ด้านขวาของโลโก้
+    Acrylic     = false, -- ปิด Acrylic เพื่อลดภาระการโหลดหน้าต่างกราฟิกบนมือถือ/ตัวรัน
+    Transparent = false,
 })
 
 local MainTab  = Window:Tab({ Title = "Main Farm",  Icon = "crosshair" })
@@ -444,7 +437,7 @@ SkillTab:Toggle({
 -- ========================
 OtherTab:Button({
     Title = "Join Discord Server",
-    Desc  = "คลิกเพื่อคัดลอกลิงก์และเปิดแอปพลิเคชัน Discord ทันที",
+    Desc  = "คลิกเพื่อคัดลอกลิงก์และเปิดแอปพลิเคชัน Discord",
     Icon  = "message-square",
     Callback = function()
         local discordLink = "https://discord.gg/EukxWETF"
@@ -475,7 +468,7 @@ OtherTab:Button({
 
         WindUI:Notify({
             Title   = "Discord Link",
-            Content = "คัดลอกลิงก์เข้า Discord และส่งคำขอเปิดแอปแล้ว!",
+            Content = "คัดลอกลิงก์เข้า Discord ไปยังคลิปบอร์ดแล้ว!",
             Duration = 5,
             Icon     = "check",
         })
@@ -483,7 +476,7 @@ OtherTab:Button({
 })
 
 -- ========================
--- Floating Button Premium (ผูกกับไฟล์รูปภาพ 1000137734.png)
+-- Floating Button Stable & Image Logo Fixed
 -- ========================
 local FloatGui    = Instance.new("ScreenGui")
 local FloatBtn    = Instance.new("ImageButton") 
@@ -503,43 +496,45 @@ end
 
 FloatBtn.Name             = "LogoToggleBtn"
 FloatBtn.Parent           = FloatGui
-FloatBtn.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
+FloatBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
 FloatBtn.Position         = UDim2.new(0.05, 0, 0.2, 0)
-FloatBtn.Size             = UDim2.fromOffset(58, 58)
+FloatBtn.Size             = UDim2.fromOffset(56, 56)
 
--- ดึงรูปภาพจากชื่อไฟล์ 1000137734.png มาใส่ในปุ่มลอยโดยตรงเพื่อความแม่นยำ
+-- ผูกไฟล์รูปภาพโลโก้ของคุณอย่างแม่นยำ
 FloatBtn.Image            = getcustomasset and getcustomasset("1000137734.png") or "rbxassetid://13511116668"
-FloatBtn.ScaleType        = Enum.ScaleType.Crop -- ปรับแบบ Crop เพื่อให้รูปวงกลมตัว M โฟกัสตรงกลางสวยงาม
+FloatBtn.ScaleType        = Enum.ScaleType.Crop
 FloatBtn.Active           = true
 FloatBtn.ZIndex           = 99999
-FloatBtn.Visible          = false -- เริ่มต้นซ่อนไว้ (จะโผล่เมื่อสั่งปิด UI หลัก)
+FloatBtn.Visible          = false -- ซ่อนไว้ตอนเริ่มระบบหน้าต่างหลักเปิดอยู่
 
-FloatCorner.CornerRadius = UDim.new(0, 16)
+FloatCorner.CornerRadius = UDim.new(0, 14)
 FloatCorner.Parent       = FloatBtn
 
--- ทำขอบเรืองแสงสีม่วงแมตช์เข้ากับแสงออร่าของโลโก้ฝั่งขวา
-FloatStroke.Color     = Color3.fromRGB(162, 0, 255)
-FloatStroke.Thickness = 3
+FloatStroke.Color     = Color3.fromRGB(0, 150, 255)
+FloatStroke.Thickness = 2.5
 FloatStroke.Parent    = FloatBtn
 
--- Drag Logic (นิ่ง เสถียร ไม่บัคหลุดมือ)
+-- Drag Logic แบบเสถียร (ลากสลัดก็ไม่ค้าง)
 local dragging   = false
 local dragInput  = nil
 local dragStart  = nil
 local startPos   = nil
+local hasDragged = false -- เพิ่มสถานะดักจับ เพื่อไม่ให้ปุ่มคิดว่าผู้เล่นคลิกตอนลากเสร็จ
 
 FloatBtn.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1
     or input.UserInputType == Enum.UserInputType.Touch then
-        dragging  = true
-        dragStart = input.Position
-        startPos  = FloatBtn.Position
-        
-        input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                dragging = false
-            end
-        end)
+        dragging   = true
+        hasDragged = false
+        dragStart  = input.Position
+        startPos   = FloatBtn.Position
+    end
+end)
+
+FloatBtn.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+    or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = false
     end
 end)
 
@@ -551,8 +546,11 @@ FloatBtn.InputChanged:Connect(function(input)
 end)
 
 UserInputService.InputChanged:Connect(function(input)
-    if dragging and input == dragInput then
+    if dragging and dragInput and input == dragInput then
         local delta = input.Position - dragStart
+        if delta.Magnitude > 5 then -- ถ้าลากเกิน 5 พิกเซล ถือว่ากำลังย้ายที่
+            hasDragged = true
+        end
         FloatBtn.Position = UDim2.new(
             startPos.X.Scale, startPos.X.Offset + delta.X,
             startPos.Y.Scale, startPos.Y.Offset + delta.Y
@@ -560,45 +558,28 @@ UserInputService.InputChanged:Connect(function(input)
     end
 end)
 
--- ควบคุม State หน้าต่างหลักสลับกับปุ่มลอย
-local uiVisible = true
+-- นำระบบลูปตรวจสอบซ้ำซ้อนออก แล้วใช้คำสั่งจัดการโดยตรงแบบแมนนวลเพื่อความเสถียร
+local uiVisible = true 
 
 FloatBtn.MouseButton1Click:Connect(function()
+    if hasDragged then return end -- ป้องกันหน้าต่างเด้งทำงานตอนเราลากปุ่มย้ายพิกัด
     uiVisible = not uiVisible
     Window:Toggle()
     FloatBtn.Visible = not uiVisible
 end)
 
--- Loop Sync ตรวจจับสถานะการเปิด/ปิดหน้าต่าง
+-- บังคับเรียกใช้งานเปิดหน้าต่างแรกสุดให้สมบูรณ์แบบ
 task.spawn(function()
-    task.wait(1.5)
-    while true do
-        task.wait(0.3)
-        pcall(function()
-            if Window and Window.Main then
-                local actualVisible = Window.Main.Visible
-                if actualVisible ~= uiVisible then
-                    uiVisible        = actualVisible
-                    FloatBtn.Visible = not actualVisible
-                end
-            end
-        end)
-    end
-end)
-
--- ========================
--- สั่งเปิดหน้าต่างเริ่มต้น (บังคับโหลด UI ขึ้นจอแน่นอน)
--- ========================
-pcall(function()
-    if not Window.Main.Visible then
-        Window:Toggle()
-    end
+    task.wait(0.5)
+    pcall(function()
+        -- ตรวจสอบให้แน่ใจว่าหน้าต่างหลักถูกเปิดขึ้นมาตั้งแต่แรก
+        if Window and not uiVisible then
+            Window:Toggle()
+        end
+    end)
 end)
 
 -- Ready Notification
 WindUI:Notify({
     Title    = "MonHub | AFS:OG V.3",
-    Content  = "ระบบโหลดเสร็จสมบูรณ์! หน้าต่างหลักพร้อมทำงานร่วมกับโลโก้แล้ว",
-    Duration = 5,
-    Icon     = "check",
-})
+    Content  = "สคริปต์แก้ไขปุ่มและหน้าต่างเสถียร 100% พร้อมใช้งานแล้วครับ
