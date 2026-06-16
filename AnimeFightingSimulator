@@ -1,4 +1,4 @@
--- -- MonHub | Farm Boss & Auto Equip Final Edition (Fixed Floating UI & Discord Integration)
+-- -- MonHub | AFS:OG V.3.2 (Clean English UI & Fixed Save Position)
 -- -- Wind UI Latest
 local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
 
@@ -105,13 +105,13 @@ local function getSlotStroke()
 
         local slot = nil
 
-        -- วิธีที่ 1
+        -- Method 1
         local slotName = hotbarSlotNames[selectedSlot]
         if slotName then
             slot = hotbar:FindFirstChild(slotName)
         end
 
-        -- วิธีที่ 2
+        -- Method 2
         if not slot then
             for _, child in ipairs(hotbar:GetChildren()) do
                 if child:IsA("GuiObject") and child.LayoutOrder == selectedSlot then
@@ -121,7 +121,7 @@ local function getSlotStroke()
             end
         end
 
-        -- วิธีที่ 3
+        -- Method 3
         if not slot then
             local validSlots = {}
             for _, child in ipairs(hotbar:GetChildren()) do
@@ -248,14 +248,9 @@ local function updateFarmState()
                 if useSavePosEnabled and savedPosition then
                     local hrp = getHRP()
                     if hrp then
+                        -- [REMOVED AUTO EQUIP ONCE ON TP] ระบบกดไอเทมอัตโนมัติถูกนำออกตามสั่ง เหลือแค่วาร์ปกลับจุดเซฟอย่างเดียว
                         hrp.CFrame = CFrame.new(savedPosition)
                         task.wait(0.3)
-                        if autoEquipEnabled then
-                            local stroke = getSlotStroke()
-                            if stroke and isStrokeBlack(stroke) then
-                                doEquip()
-                            end
-                        end
                     end
                 end
                 task.wait(0.3)
@@ -314,10 +309,10 @@ local function startAutoSkill()
 end
 
 -- ========================
--- Window Setup
+-- Window Setup (เปลี่ยนชื่อสคริปต์เป็นตามสั่ง)
 -- ========================
 local Window = WindUI:CreateWindow({
-    Title       = "MonHub | Simple Farm",
+    Title       = "MonHub | AFS:OG V.3.2",
     Icon        = "swords",
     Author      = "MonHub",
     Folder      = "MonHubSimple",
@@ -334,25 +329,25 @@ local SkillTab = Window:Tab({ Title = "Auto Skill", Icon = "zap" })
 local OtherTab = Window:Tab({ Title = "Other",      Icon = "plus-circle" }) 
 
 -- ========================
--- Main Farm UI
+-- Main Farm UI (แปลภาษาอังกฤษ / ลบคำอธิบายบอสออก)
 -- ========================
 MainTab:Toggle({
-    Title = "Auto บอสลิง",
-    Desc  = "วาร์ปฟาร์ม Great Ape อัตโนมัติเมื่อเกิด",
+    Title = "Auto Great Ape",
+    Desc  = "", -- เอาคำอธิบายออกตามสั่ง
     Icon  = "zap", Value = false,
     Callback = function(state) targetBosses["Great Ape"] = state updateFarmState() end,
 })
 
 MainTab:Toggle({
-    Title = "Auto บอสไททัน",
-    Desc  = "วาร์ปฟาร์ม Armored Titan อัตโนมัติเมื่อเกิด",
+    Title = "Auto Armored Titan",
+    Desc  = "", -- เอาคำอธิบายออกตามสั่ง
     Icon  = "zap", Value = false,
     Callback = function(state) targetBosses["Armored Titan"] = state updateFarmState() end,
 })
 
 MainTab:Toggle({
-    Title = "Auto บอสครอกโคดายส์",
-    Desc  = "วาร์ปฟาร์ม Crocodile อัตโนมัติเมื่อเกิด",
+    Title = "Auto Crocodile",
+    Desc  = "", -- เอาคำอธิบายออกตามสั่ง
     Icon  = "zap", Value = false,
     Callback = function(state) targetBosses["Crocodile"] = state updateFarmState() end,
 })
@@ -361,33 +356,33 @@ MainTab:Divider()
 
 MainTab:Button({
     Title = "Save Position",
-    Desc  = "บันทึกพิกัดยืนปัจจุบัน เพื่อวาร์ปกลับเมื่อบอสไม่เกิด",
+    Desc  = "Save current position to teleport back when bosses are dead",
     Icon  = "map-pin",
     Callback = function()
         local hrp = getHRP()
         if hrp then
             savedPosition = hrp.Position
             WindUI:Notify({
-                Title   = "บันทึกพิกัดสำเร็จ",
+                Title   = "Position Saved",
                 Content = ("X: %.1f | Y: %.1f | Z: %.1f"):format(savedPosition.X, savedPosition.Y, savedPosition.Z),
                 Duration = 4, Icon = "map-pin",
             })
         else
-            WindUI:Notify({ Title = "เกิดข้อผิดพลาด", Content = "ไม่พบพิกัดตัวละคร", Duration = 3, Icon = "alert-circle" })
+            WindUI:Notify({ Title = "Error", Content = "Character position not found", Duration = 3, Icon = "alert-circle" })
         end
     end,
 })
 
 MainTab:Toggle({
     Title = "Use Save Position",
-    Desc  = "วาร์ปกลับจุดเซฟเมื่อบอสไม่เกิด",
+    Desc  = "Teleport back to saved coordinates when bosses are not active",
     Icon  = "refresh-cw", Value = false,
     Callback = function(state)
         useSavePosEnabled = state
         if state and not savedPosition then
-            WindUI:Notify({ Title = "คำเตือน", Content = "กรุณากด Save Position ก่อน", Duration = 4, Icon = "alert-circle" })
+            WindUI:Notify({ Title = "Warning", Content = "Please use Save Position first", Duration = 4, Icon = "alert-circle" })
         else
-            WindUI:Notify({ Title = state and "เปิดระบบจุดเซฟแล้ว" or "ปิดระบบจุดเซฟแล้ว", Duration = 2, Icon = state and "check" or "x" })
+            WindUI:Notify({ Title = state and "Save Position Enabled" or "Save Position Disabled", Duration = 2, Icon = state and "check" or "x" })
         end
     end,
 })
@@ -395,8 +390,8 @@ MainTab:Toggle({
 MainTab:Divider()
 
 MainTab:Dropdown({
-    Title  = "เลือก Slot ที่จะ Equip",
-    Desc   = "ระบบดักจับสีขอบ UI เคลียร์บัคตรวจจับข้ามปุ่มเรียบร้อย",
+    Title  = "Select Equip Slot",
+    Desc   = "", -- เอาคำอธิบายออกตามสั่ง
     Icon   = "hash",
     Values = { "Slot 1", "Slot 2", "Slot 3", "Slot 4", "Slot 5" },
     Value  = "Slot 1",
@@ -408,31 +403,31 @@ MainTab:Dropdown({
 
 MainTab:Toggle({
     Title = "Auto Equip",
-    Desc  = "กดปุ่ม Slot อัตโนมัติ ตรวจสอบเมื่อตัวละครหยุดนิ่ง ไม่สแปมรัว",
+    Desc  = "", -- เอาคำอธิบายออกตามสั่ง
     Icon  = "shield", Value = false,
     Callback = function(state)
         if state then
             startAutoEquip()
             WindUI:Notify({
-                Title   = "Auto Equip เปิดแล้ว",
-                Content = "Slot " .. tostring(selectedSlot) .. " | รอ UIStroke สีดำแล้วกดอัตโนมัติ",
+                Title   = "Auto Equip Enabled",
+                Content = "Slot " .. tostring(selectedSlot) .. " | Waiting for UI black stroke detection",
                 Duration = 3, Icon = "check-circle",
             })
         else
             stopAutoEquip()
-            WindUI:Notify({ Title = "Auto Equip ปิดแล้ว", Duration = 2, Icon = "x-circle" })
+            WindUI:Notify({ Title = "Auto Equip Disabled", Duration = 2, Icon = "x-circle" })
         end
     end,
 })
 
 -- ========================
--- Auto Skill UI
+-- Auto Skill UI (แปลภาษาอังกฤษ)
 -- ========================
 local alphabet = {"A","B","C","D","E","F","G","H","I","J","K","L","M","N","O","P","Q","R","S","T","U","V","W","X","Y","Z"}
 
 SkillTab:Dropdown({
-    Title  = "เลือกสกิลที่จะใช้รัว",
-    Desc   = "เลือกตัวอักษรพร้อมกันได้หลายปุ่ม",
+    Title  = "Select Skills",
+    Desc   = "You can choose multiple keys simultaneously",
     Icon   = "keyboard", Multi = true, Values = alphabet,
     Callback = function(selectedList)
         selectedSkills = {}
@@ -445,26 +440,26 @@ SkillTab:Dropdown({
 })
 
 SkillTab:Toggle({
-    Title = "เปิดใช้งาน Auto Skill",
-    Desc  = "กดปุ่มสกิลที่เลือกไว้ทั้งหมดอย่างรวดเร็ว",
+    Title = "Enable Auto Skill",
+    Desc  = "Spam selected skill hotkeys rapidly during fight",
     Icon  = "zap", Value = false,
     Callback = function(state)
         if state then
             startAutoSkill()
-            WindUI:Notify({ Title = "Auto Skill ทำงาน", Content = "สแปมปุ่มสกิลที่กำหนด", Duration = 3, Icon = "check" })
+            WindUI:Notify({ Title = "Auto Skill Active", Content = "Spamming selected keys", Duration = 3, Icon = "check" })
         else
             stopAutoSkill()
-            WindUI:Notify({ Title = "Auto Skill หยุดทำงาน", Duration = 2, Icon = "x" })
+            WindUI:Notify({ Title = "Auto Skill Inactive", Duration = 2, Icon = "x" })
         end
     end,
 })
 
 -- ========================
--- Other Tab UI
+-- Other Tab UI (แปลภาษาอังกฤษ)
 -- ========================
 OtherTab:Button({
     Title = "Join My Discord",
-    Desc  = "เปิดหน้าลิงก์เชิญชวนอัตโนมัติและคัดลอกลิงก์ไปยังบอร์ด",
+    Desc  = "Automatically open invite link and copy it to your clipboard",
     Icon  = "link",
     Callback = function()
         if setclipboard then
@@ -492,7 +487,7 @@ OtherTab:Button({
 
         WindUI:Notify({
             Title   = "Discord System",
-            Content = "เปิดดิสคอร์ดและทำการคัดลอกลิงก์สำเร็จแล้ว!",
+            Content = "Discord opened and link copied successfully!",
             Duration = 5,
             Icon     = "info",
         })
@@ -500,7 +495,7 @@ OtherTab:Button({
 })
 
 -- ========================
--- Floating Button (ปรับปรุงความเสถียร แยกสลับสถานะสมบูรณ์)
+-- Floating Button (ระบบล็อคสมบูรณ์แบบ ห้ามกระทบเด็ดขาด)
 -- ========================
 local FloatGui    = Instance.new("ScreenGui")
 local FloatBtn    = Instance.new("TextButton")
@@ -529,7 +524,7 @@ FloatBtn.Font             = Enum.Font.GothamBold
 FloatBtn.TextSize         = 24
 FloatBtn.Active           = true
 FloatBtn.ZIndex           = 99999
-FloatBtn.Visible          = false -- เริ่มแรกเมนูเปิดอยู่ ปุ่มลอยจึงซ่อนตัว
+FloatBtn.Visible          = false 
 
 FloatCorner.CornerRadius = UDim.new(0, 14)
 FloatCorner.Parent       = FloatBtn
@@ -538,7 +533,7 @@ FloatStroke.Color     = Color3.fromRGB(0, 150, 255)
 FloatStroke.Thickness = 2.5
 FloatStroke.Parent    = FloatBtn
 
--- Drag Logic (ระบบลากปุ่มลอย)
+-- Drag Logic
 local dragging   = false
 local dragInput  = nil
 local dragStart  = nil
@@ -577,12 +572,11 @@ UserInputService.InputChanged:Connect(function(input)
     end
 end)
 
--- ระบบเปิด-ปิดหน้าต่างและสลับปุ่มลอยที่ถูกต้องและไม่เออเร่อ
 local menuOpen = true
 
 local function toggleUI()
     menuOpen = not menuOpen
-    Window:Toggle() -- ฟังก์ชันดั้งเดิมของ WindUI
+    Window:Toggle()
     FloatBtn.Visible = not menuOpen
 end
 
@@ -591,13 +585,11 @@ FloatBtn.MouseButton1Click:Connect(function()
     toggleUI()
 end)
 
--- ตรวจหาอินสแตนซ์หน้าจอจริงในเกมเพื่อคอย Sync สถานะปุ่มลอยหากผู้ใช้ไปกดปุ่มย่อในแถบเมนูหลักเอง
 task.spawn(function()
     task.wait(1.5)
     local playerGui = LocalPlayer:WaitForChild("PlayerGui")
     local actualMainFrame = nil
     
-    -- ค้นหาเฟรม UI หลักของตัว WindUI บนหน้าจอโดยตรง
     local function findMainFrame()
         for _, gui in ipairs(playerGui:GetChildren()) do
             if gui:IsA("ScreenGui") and gui:FindFirstChild("Main") then
@@ -616,7 +608,6 @@ task.spawn(function()
         task.wait(0.5)
         pcall(function()
             if actualMainFrame then
-                -- ตรวจสอบจากการแสดงผลจริงบนหน้าจอของผู้เล่น
                 local isVisible = actualMainFrame.Visible and (actualMainFrame.Size.Y.Offset > 50)
                 if isVisible ~= menuOpen then
                     menuOpen = isVisible
@@ -629,10 +620,10 @@ task.spawn(function()
     end
 end)
 
--- Ready Notification
+-- Ready Notification (เปลี่ยนชื่อเป็นเวอร์ชันใหม่เป็นอังกฤษทั้งหมด)
 WindUI:Notify({
-    Title    = "MonHub โหลดสำเร็จ!",
-    Content  = "แก้ไขระบบปุ่มลอย และเพิ่มหมวดหมู่ Other เรียบร้อยแล้วครับ",
+    Title    = "MonHub Loaded!",
+    Content  = "MonHub | AFS:OG V.3.2 is ready to use",
     Duration = 5,
     Icon     = "check",
 })
