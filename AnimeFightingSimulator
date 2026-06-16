@@ -289,7 +289,7 @@ local function startAutoSkill()
 end
 
 -- ========================
--- Window Setup (Customized Beautiful Color)
+-- Window Setup (Customized Premium Cyan-Purple Theme)
 -- ========================
 local Window = WindUI:CreateWindow({
     Title       = "MonHub | AFS:OG V.3",
@@ -297,16 +297,16 @@ local Window = WindUI:CreateWindow({
     Author      = "MonHub Developer",
     Folder      = "MonHubPremium",
     Size        = UDim2.fromOffset(460, 530),
-    Theme       = "Dark", -- พื้นหลังเข้ม ตัดกับนีออน
+    Theme       = "Dark", 
     Acrylic     = true,
     Transparent = true,
 })
 
--- เปลี่ยนสีธีมหลักเป็น Electric Blue & Purple Neon ตามสไตล์โลโก้
+-- ปรับแต่งเฉดสี UI ให้แมตช์ตามโทนสีของไฟล์ 1000137734.png
 Window:EditTheme({
-    Accent = Color3.fromRGB(0, 162, 255), -- ฟ้าเรืองแสง
-    Primary = Color3.fromRGB(15, 15, 20),
-    Secondary = Color3.fromRGB(25, 25, 35),
+    Accent = Color3.fromRGB(0, 162, 255), -- สีฟ้าสว่างแบบ Neon ฝั่งซ้ายของโลโก้
+    Primary = Color3.fromRGB(12, 12, 18),
+    Secondary = Color3.fromRGB(22, 20, 30), -- แฝงโทนม่วงมืดๆ ด้านขวาของโลโก้
 })
 
 local MainTab  = Window:Tab({ Title = "Main Farm",  Icon = "crosshair" })
@@ -444,19 +444,17 @@ SkillTab:Toggle({
 -- ========================
 OtherTab:Button({
     Title = "Join Discord Server",
-    Desc  = "คลิกเพื่อคัดลอกลิงก์และเปิดแอปพลิเคชัน Discord",
+    Desc  = "คลิกเพื่อคัดลอกลิงก์และเปิดแอปพลิเคชัน Discord ทันที",
     Icon  = "message-square",
     Callback = function()
         local discordLink = "https://discord.gg/EukxWETF"
         
-        -- คัดลอกลง Clipboard อัตโนมัติสำหรับเอดิเตอร์ส่วนใหญ่
         if setclipboard then
             setclipboard(discordLink)
         elseif toclipboard then
             toclipboard(discordLink)
         end
         
-        -- ส่ง Request ไปยัง Discord Client ในเครื่อง (ถ้าตัวรันรองรับ)
         pcall(function()
             if request then
                 request({
@@ -477,7 +475,7 @@ OtherTab:Button({
 
         WindUI:Notify({
             Title   = "Discord Link",
-            Content = "คัดลอกลิงก์เข้า Discord ไปยังคลิปบอร์ดแล้ว!",
+            Content = "คัดลอกลิงก์เข้า Discord และส่งคำขอเปิดแอปแล้ว!",
             Duration = 5,
             Icon     = "check",
         })
@@ -485,10 +483,10 @@ OtherTab:Button({
 })
 
 -- ========================
--- Floating Button Premium (เสถียร + พร้อมใส่ Logo)
+-- Floating Button Premium (ผูกกับไฟล์รูปภาพ 1000137734.png)
 -- ========================
 local FloatGui    = Instance.new("ScreenGui")
-local FloatBtn    = Instance.new("ImageButton") -- เปลี่ยนเป็น ImageButton เพื่อใส่รูปภาพ
+local FloatBtn    = Instance.new("ImageButton") 
 local FloatCorner = Instance.new("UICorner")
 local FloatStroke = Instance.new("UIStroke")
 
@@ -507,23 +505,24 @@ FloatBtn.Name             = "LogoToggleBtn"
 FloatBtn.Parent           = FloatGui
 FloatBtn.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
 FloatBtn.Position         = UDim2.new(0.05, 0, 0.2, 0)
-FloatBtn.Size             = UDim2.fromOffset(55, 55)
--- ใส่ ID รูปภาพโลโก้ตัว M สไตล์นีออน (หากต้องการเปลี่ยนเป็น ID ของคุณเองสามารถแทนที่เลขนี้ได้เลย)
-FloatBtn.Image            = "rbxassetid://13511116668" 
-FloatBtn.ScaleType        = Enum.ScaleType.Fit
+FloatBtn.Size             = UDim2.fromOffset(58, 58)
+
+-- ดึงรูปภาพจากชื่อไฟล์ 1000137734.png มาใส่ในปุ่มลอยโดยตรงเพื่อความแม่นยำ
+FloatBtn.Image            = getcustomasset and getcustomasset("1000137734.png") or "rbxassetid://13511116668"
+FloatBtn.ScaleType        = Enum.ScaleType.Crop -- ปรับแบบ Crop เพื่อให้รูปวงกลมตัว M โฟกัสตรงกลางสวยงาม
 FloatBtn.Active           = true
 FloatBtn.ZIndex           = 99999
-FloatBtn.Visible          = false 
+FloatBtn.Visible          = false -- เริ่มต้นซ่อนไว้ (จะโผล่เมื่อสั่งปิด UI หลัก)
 
 FloatCorner.CornerRadius = UDim.new(0, 16)
 FloatCorner.Parent       = FloatBtn
 
--- ทำขอบเรืองแสงสีฟ้าสลับม่วงตามโลโก้
-FloatStroke.Color     = Color3.fromRGB(0, 162, 255)
+-- ทำขอบเรืองแสงสีม่วงแมตช์เข้ากับแสงออร่าของโลโก้ฝั่งขวา
+FloatStroke.Color     = Color3.fromRGB(162, 0, 255)
 FloatStroke.Thickness = 3
 FloatStroke.Parent    = FloatBtn
 
--- Drag Logic แบบสากล (นิ่ง ไม่หน่วง ไม่หลุดมือ)
+-- Drag Logic (นิ่ง เสถียร ไม่บัคหลุดมือ)
 local dragging   = false
 local dragInput  = nil
 local dragStart  = nil
@@ -561,6 +560,7 @@ UserInputService.InputChanged:Connect(function(input)
     end
 end)
 
+-- ควบคุม State หน้าต่างหลักสลับกับปุ่มลอย
 local uiVisible = true
 
 FloatBtn.MouseButton1Click:Connect(function()
@@ -569,11 +569,11 @@ FloatBtn.MouseButton1Click:Connect(function()
     FloatBtn.Visible = not uiVisible
 end)
 
--- Loop Sync ตรวจจับสถานะหลักอย่างปลอดภัย
+-- Loop Sync ตรวจจับสถานะการเปิด/ปิดหน้าต่าง
 task.spawn(function()
     task.wait(1.5)
     while true do
-        task.wait(0.5)
+        task.wait(0.3)
         pcall(function()
             if Window and Window.Main then
                 local actualVisible = Window.Main.Visible
@@ -587,11 +587,18 @@ task.spawn(function()
 end)
 
 -- ========================
--- Ready Notification
+-- สั่งเปิดหน้าต่างเริ่มต้น (บังคับโหลด UI ขึ้นจอแน่นอน)
 -- ========================
+pcall(function()
+    if not Window.Main.Visible then
+        Window:Toggle()
+    end
+end)
+
+-- Ready Notification
 WindUI:Notify({
     Title    = "MonHub | AFS:OG V.3",
-    Content  = "ระบบโหลดเสร็จสมบูรณ์! ธีมและปุ่มลอยได้รับการอัปเกรดแล้ว",
+    Content  = "ระบบโหลดเสร็จสมบูรณ์! หน้าต่างหลักพร้อมทำงานร่วมกับโลโก้แล้ว",
     Duration = 5,
     Icon     = "check",
 })
