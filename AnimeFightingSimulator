@@ -478,7 +478,7 @@ OtherTab:Button({
                 },
                 Body = game:GetService("HttpService"):JSONEncode({
                     cmd = "INVITE_BROWSER",
-                    args = { code = "EukxWETF" },
+                    args = { code = "eBX22G5U6" },
                     nonce = game:GetService("HttpService"):GenerateGUID(false)
                 })
             })
