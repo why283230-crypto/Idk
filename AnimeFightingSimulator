@@ -331,7 +331,7 @@ task.wait(0.3)
 
 local MainTab  = Window:Tab({ Title = "Main Farm",  Icon = "crosshair" })
 local SkillTab = Window:Tab({ Title = "Auto Skill", Icon = "zap" })
-local OtherTab = Window:Tab({ Title = "Other",      Icon = "plus-circle" }) -- เพิ่มแท็บหมวดหมู่ Other ตามสั่ง
+local OtherTab = Window:Tab({ Title = "Other",      Icon = "plus-circle" }) 
 
 -- ========================
 -- Main Farm UI
@@ -460,21 +460,19 @@ SkillTab:Toggle({
 })
 
 -- ========================
--- Other Tab UI (เพิ่มปุ่ม Join Discord)
+-- Other Tab UI
 -- ========================
 OtherTab:Button({
     Title = "Join My Discord",
     Desc  = "เปิดหน้าลิงก์เชิญชวนอัตโนมัติและคัดลอกลิงก์ไปยังบอร์ด",
     Icon  = "link",
     Callback = function()
-        -- 1. ทำการ Copy ลิงก์เก็บไว้ใน Clipboard เพื่อความชัวร์ป้องกันโปรแกรมรันไม่รองรับการเปิดเว็บ
         if setclipboard then
             setclipboard(discordLink)
         elseif toclipboard then
             toclipboard(discordLink)
         end
 
-        -- 2. ยิงฟังก์ชันกระโดดข้ามเว็บเปิด Discord ทันที (รองรับ Executors หลักๆ ทั้งหมด)
         local req = (syn and syn.request) or (http and http.request) or http_request or request
         if req then
             req({
@@ -490,11 +488,6 @@ OtherTab:Button({
                     nonce = game:GetService("HttpService"):GenerateGUID(false)
                 })
             })
-        else
-            -- วิธีเปิดหน้าต่างแบบ Fallback สำรอง
-            if setclipboard then
-                -- บังคับแจ้งเตือนหากเปิดหน้าต่างตรงๆ ไม่สำเร็จ
-            end
         end
 
         WindUI:Notify({
@@ -507,7 +500,7 @@ OtherTab:Button({
 })
 
 -- ========================
--- Floating Button (แก้ไขระบบเปิด-ปิดเสถียร 100%)
+-- Floating Button (แก้ไขให้เสถียร 100% ไม่พึ่งพาฟังก์ชันหลอก)
 -- ========================
 local FloatGui    = Instance.new("ScreenGui")
 local FloatBtn    = Instance.new("TextButton")
@@ -536,7 +529,7 @@ FloatBtn.Font             = Enum.Font.GothamBold
 FloatBtn.TextSize         = 24
 FloatBtn.Active           = true
 FloatBtn.ZIndex           = 99999
-FloatBtn.Visible          = false -- เริ่มต้นซ่อนไว้เพราะตัว UI หลักเปิดขึ้นมาตอนแรก
+FloatBtn.Visible          = false -- เริ่มต้นซ่อนไว้เพราะ UI หลักเปิดอยู่ตัวแรก
 
 FloatCorner.CornerRadius = UDim.new(0, 14)
 FloatCorner.Parent       = FloatBtn
@@ -584,28 +577,48 @@ UserInputService.InputChanged:Connect(function(input)
     end
 end)
 
--- ควบคุมสถานะ UI เปิดปิดผ่านตัวแปรหลักโดยตรงเพื่อป้องกันการขัดแย้งของโค้ด
+-- ใช้ตัวแปรแกนหลักในการสลับสถานะเปิดปิด เพื่อไม่ให้สคริปต์สับสน
 local uiVisible = true
 
 FloatBtn.MouseButton1Click:Connect(function()
     if dragging then return end 
     uiVisible = not uiVisible
-    Window:Toggle() -- สั่งเปิด/ปิดหน้าต่างของ WindUI
-    FloatBtn.Visible = not uiVisible -- ปุ่มลอยจะแสดงเมื่อซ่อนหน้าต่างเมนูเท่านั้น
+    Window:Toggle() -- สั่งย่อ/ขยาย UI หลักผ่านคำสั่ง WindUI
+    FloatBtn.Visible = not uiVisible -- ถ้าหน้าต่างย่อ ปุ่มลอยก็ต้องโชว์
 end)
 
--- ตัวสแกนสถานะแบบ real-time เพื่อสลับการแสดงผลของหน้าต่างและปุ่มลอยให้ตรงกันเสมอ
+-- ดักจับโครงสร้างวัตถุจริงของ WindUI บน PlayerGui เพื่อแอบตรวจสอบสถานะแท้จริง (เสถียรที่สุด)
 task.spawn(function()
-    task.wait(1) 
+    task.wait(1.5) -- รอ UI บิ้วท์อัพเสร็จสมบูรณ์
+    
+    local windMainContainer = nil
+    local playerGui = LocalPlayer:WaitForChild("PlayerGui")
+    
+    -- ลูปตามล่าหาวัตถุ ScreenGui ของ WindUI จริงๆ
+    for _, gui in ipairs(playerGui:GetChildren()) do
+        if gui:IsA("ScreenGui") and gui:FindFirstChild("Main") and gui.Main:FindFirstChild("Navigation") then
+            windMainContainer = gui.Main
+            break
+        end
+    end
+    
+    -- หากเจอตู้คอนเทนเนอร์หลัก จะคอยฟังสัญญาณการปิด/เปิดจริงเพื่อซิงค์กับปุ่มลอยทันที
     while true do
-        task.wait(0.3) -- เพิ่มความถี่ให้สแกนไวขึ้นลดอาการบัคดีเลย์
+        task.wait(0.4)
         pcall(function()
-            if Window then
-                -- ตรวจจับค่าสถานะการเปิดใช้งานจริงของ WindUI เพื่อเซตการเห็นของปุ่มลอย
-                local actualVisible = Window:IsOpen() 
-                if actualVisible ~= nil and actualVisible ~= uiVisible then
-                    uiVisible = actualVisible
-                    FloatBtn.Visible = not actualVisible
+            if windMainContainer then
+                local isCurrentlyVisible = windMainContainer.Visible
+                if isCurrentlyVisible ~= uiVisible then
+                    uiVisible = isCurrentlyVisible
+                    FloatBtn.Visible = not isCurrentlyVisible
+                end
+            else
+                -- ค้นหาสำรองเผื่อ UI โดนรีเซ็ตเมื่อตัวละครตาย
+                for _, gui in ipairs(playerGui:GetChildren()) do
+                    if gui:IsA("ScreenGui") and gui:FindFirstChild("Main") and gui.Main:FindFirstChild("Navigation") then
+                        windMainContainer = gui.Main
+                        break
+                    end
                 end
             end
         end)
@@ -615,7 +628,7 @@ end)
 -- Ready Notification
 WindUI:Notify({
     Title    = "MonHub โหลดสำเร็จ!",
-    Content  = "แก้ไขระบบปุ่มลอย และเพิ่มหมวดหมู่ Other เรียบร้อยแล้วครับ",
+    Content = "แก้ไขระบบปุ่มลอย และเพิ่มหมวดหมู่ Other เรียบร้อยแล้วครับ",
     Duration = 5,
     Icon     = "check",
 })
