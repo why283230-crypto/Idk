@@ -248,7 +248,6 @@ local function updateFarmState()
                 if useSavePosEnabled and savedPosition then
                     local hrp = getHRP()
                     if hrp then
-                        -- [REMOVED AUTO EQUIP ONCE ON TP] ระบบกดไอเทมอัตโนมัติถูกนำออกตามสั่ง เหลือแค่วาร์ปกลับจุดเซฟอย่างเดียว
                         hrp.CFrame = CFrame.new(savedPosition)
                         task.wait(0.3)
                     end
@@ -309,7 +308,7 @@ local function startAutoSkill()
 end
 
 -- ========================
--- Window Setup (เปลี่ยนชื่อสคริปต์เป็นตามสั่ง)
+-- Window Setup
 -- ========================
 local Window = WindUI:CreateWindow({
     Title       = "MonHub | AFS:OG V.3.2",
@@ -329,25 +328,25 @@ local SkillTab = Window:Tab({ Title = "Auto Skill", Icon = "zap" })
 local OtherTab = Window:Tab({ Title = "Other",      Icon = "plus-circle" }) 
 
 -- ========================
--- Main Farm UI (แปลภาษาอังกฤษ / ลบคำอธิบายบอสออก)
+-- Main Farm UI
 -- ========================
 MainTab:Toggle({
     Title = "Auto Great Ape",
-    Desc  = "", -- เอาคำอธิบายออกตามสั่ง
+    Desc  = "", 
     Icon  = "zap", Value = false,
     Callback = function(state) targetBosses["Great Ape"] = state updateFarmState() end,
 })
 
 MainTab:Toggle({
     Title = "Auto Armored Titan",
-    Desc  = "", -- เอาคำอธิบายออกตามสั่ง
+    Desc  = "", 
     Icon  = "zap", Value = false,
     Callback = function(state) targetBosses["Armored Titan"] = state updateFarmState() end,
 })
 
 MainTab:Toggle({
     Title = "Auto Crocodile",
-    Desc  = "", -- เอาคำอธิบายออกตามสั่ง
+    Desc  = "", 
     Icon  = "zap", Value = false,
     Callback = function(state) targetBosses["Crocodile"] = state updateFarmState() end,
 })
@@ -391,7 +390,7 @@ MainTab:Divider()
 
 MainTab:Dropdown({
     Title  = "Select Equip Slot",
-    Desc   = "", -- เอาคำอธิบายออกตามสั่ง
+    Desc   = "", 
     Icon   = "hash",
     Values = { "Slot 1", "Slot 2", "Slot 3", "Slot 4", "Slot 5" },
     Value  = "Slot 1",
@@ -403,7 +402,7 @@ MainTab:Dropdown({
 
 MainTab:Toggle({
     Title = "Auto Equip",
-    Desc  = "", -- เอาคำอธิบายออกตามสั่ง
+    Desc  = "", 
     Icon  = "shield", Value = false,
     Callback = function(state)
         if state then
@@ -421,7 +420,7 @@ MainTab:Toggle({
 })
 
 -- ========================
--- Auto Skill UI (แปลภาษาอังกฤษ)
+-- Auto Skill UI
 -- ========================
 local alphabet = {"A","B","C","D","E","F","G","H","I","J","K","L","M","N","O","P","Q","R","S","T","U","V","W","X","Y","Z"}
 
@@ -455,7 +454,7 @@ SkillTab:Toggle({
 })
 
 -- ========================
--- Other Tab UI (แปลภาษาอังกฤษ)
+-- Other Tab UI
 -- ========================
 OtherTab:Button({
     Title = "Join My Discord",
@@ -495,7 +494,7 @@ OtherTab:Button({
 })
 
 -- ========================
--- Floating Button (ระบบล็อคสมบูรณ์แบบ ห้ามกระทบเด็ดขาด)
+-- Floating Button (แก้ไขให้เสถียร 100% โดยอิงระบบ Minimize ของ WindUI แท้)
 -- ========================
 local FloatGui    = Instance.new("ScreenGui")
 local FloatBtn    = Instance.new("TextButton")
@@ -524,7 +523,7 @@ FloatBtn.Font             = Enum.Font.GothamBold
 FloatBtn.TextSize         = 24
 FloatBtn.Active           = true
 FloatBtn.ZIndex           = 99999
-FloatBtn.Visible          = false 
+FloatBtn.Visible          = false -- เริ่มแรกเมนูเปิดอยู่ ปุ่มลอยเลยซ่อน
 
 FloatCorner.CornerRadius = UDim.new(0, 14)
 FloatCorner.Parent       = FloatBtn
@@ -533,7 +532,7 @@ FloatStroke.Color     = Color3.fromRGB(0, 150, 255)
 FloatStroke.Thickness = 2.5
 FloatStroke.Parent    = FloatBtn
 
--- Drag Logic
+-- Drag Logic (ระบบลากปุ่มย้ายที่ได้สมูท)
 local dragging   = false
 local dragInput  = nil
 local dragStart  = nil
@@ -572,55 +571,52 @@ UserInputService.InputChanged:Connect(function(input)
     end
 end)
 
-local menuOpen = true
+-- ควบคุมสลับการปิดเปิดด้วยคำสั่งหลัก และดักปุ่มย่อของแท้ใน WindUI
+local function openMenu()
+    FloatBtn.Visible = false
+    Window:Minimize() -- ขยายคืนกลับมา
+end
 
-local function toggleUI()
-    menuOpen = not menuOpen
-    Window:Toggle()
-    FloatBtn.Visible = not menuOpen
+local function closeMenu()
+    FloatBtn.Visible = true
+    -- ตรวจสอบหากเมนูหลักยังไม่ย่อ ให้สั่งย่อลงไป
+    if not Window.Minimized then
+        Window:Minimize()
+    end
 end
 
 FloatBtn.MouseButton1Click:Connect(function()
     if dragging then return end 
-    toggleUI()
+    openMenu()
 end)
 
-task.spawn(function()
-    task.wait(1.5)
-    local playerGui = LocalPlayer:WaitForChild("PlayerGui")
-    local actualMainFrame = nil
-    
-    local function findMainFrame()
-        for _, gui in ipairs(playerGui:GetChildren()) do
-            if gui:IsA("ScreenGui") and gui:FindFirstChild("Main") then
-                local frame = gui.Main
-                if frame:FindFirstChild("Navigation") or frame:FindFirstChild("Content") then
-                    return frame
-                end
-            end
+-- ใช้สัญญาณจากระบบ WindUI โดยตรงเพื่อความเสถียร (ปลอดภัยกว่าการลูปหา Object)
+if Window.OnMinimize then
+    Window.OnMinimize:Connect(function(isMinimized)
+        if isMinimized then
+            closeMenu()
+        else
+            openMenu()
         end
-        return nil
-    end
+    end)
+end
 
-    actualMainFrame = findMainFrame()
-
-    while true do
-        task.wait(0.5)
+-- ดักสแกนตรวจสอบสำรองแบบเซฟสุด ๆ เผื่อกรณีตัวสคริปต์โดนบังคับ Minimize นอกระบบ
+task.spawn(function()
+    while task.wait(1) do
         pcall(function()
-            if actualMainFrame then
-                local isVisible = actualMainFrame.Visible and (actualMainFrame.Size.Y.Offset > 50)
-                if isVisible ~= menuOpen then
-                    menuOpen = isVisible
-                    FloatBtn.Visible = not isVisible
+            if Window then
+                if Window.Minimized then
+                    if not FloatBtn.Visible then FloatBtn.Visible = true end
+                else
+                    if FloatBtn.Visible then FloatBtn.Visible = false end
                 end
-            else
-                actualMainFrame = findMainFrame()
             end
         end)
     end
 end)
 
--- Ready Notification (เปลี่ยนชื่อเป็นเวอร์ชันใหม่เป็นอังกฤษทั้งหมด)
+-- Ready Notification
 WindUI:Notify({
     Title    = "MonHub Loaded!",
     Content  = "MonHub | AFS:OG V.3.2 is ready to use",
