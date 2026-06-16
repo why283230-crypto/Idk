@@ -29,8 +29,8 @@ local useSavePosEnabled = false
 local autoEquipEnabled  = false
 local autoEquipThread   = nil
 local selectedSlot      = 1
-local strokeConn        = nil 
-local isEquipping       = false 
+local strokeConn        = nil
+local isEquipping       = false
 
 -- [Auto Skill]
 local autoSkillEnabled = false
@@ -55,7 +55,7 @@ local slotKeyCode = {
 }
 
 local hotbarSlotNames = { "Strength", "Sword", "Durability", "Chakra" }
-local discordLink     = "https://discord.gg/EukxWETF"
+local discordLink     = "https://discord.gg/eBX22G5U6"
 
 -- ========================
 -- Helpers
@@ -141,7 +141,7 @@ local function getSlotStroke()
 end
 
 local function isStrokeBlack(stroke)
-    if not stroke then return false end 
+    if not stroke then return false end
     local c = stroke.Color
     return c.R < 0.1 and c.G < 0.1 and c.B < 0.1
 end
@@ -162,14 +162,14 @@ local function stopAutoEquip()
 end
 
 local function doEquip()
-    if isEquipping then return end          
-    isEquipping = true                      
+    if isEquipping then return end
+    isEquipping = true
     local kc = slotKeyCode[selectedSlot]
     if kc then
         pressKey(kc)
-        task.wait(0.4)                      
+        task.wait(0.4)
     end
-    isEquipping = false                      
+    isEquipping = false
 end
 
 local function startAutoEquip()
@@ -229,7 +229,7 @@ local function updateFarmState()
 
     farmThread = task.spawn(function()
         while farmingEnabled do
-            local hasTarget    = false
+            local hasTarget       = false
             local activeBossCount = 0
 
             for bossName, enabled in pairs(targetBosses) do
@@ -321,32 +321,32 @@ local Window = WindUI:CreateWindow({
     Transparent = false,
 })
 
-task.wait(0.3) 
+task.wait(0.3)
 
 local MainTab  = Window:Tab({ Title = "Main Farm",  Icon = "crosshair" })
 local SkillTab = Window:Tab({ Title = "Auto Skill", Icon = "zap" })
-local OtherTab = Window:Tab({ Title = "Other",      Icon = "plus-circle" }) 
+local OtherTab = Window:Tab({ Title = "Other",      Icon = "plus-circle" })
 
 -- ========================
 -- Main Farm UI
 -- ========================
 MainTab:Toggle({
     Title = "Auto Great Ape",
-    Desc  = "", 
+    Desc  = "",
     Icon  = "zap", Value = false,
     Callback = function(state) targetBosses["Great Ape"] = state updateFarmState() end,
 })
 
 MainTab:Toggle({
     Title = "Auto Armored Titan",
-    Desc  = "", 
+    Desc  = "",
     Icon  = "zap", Value = false,
     Callback = function(state) targetBosses["Armored Titan"] = state updateFarmState() end,
 })
 
 MainTab:Toggle({
     Title = "Auto Crocodile",
-    Desc  = "", 
+    Desc  = "",
     Icon  = "zap", Value = false,
     Callback = function(state) targetBosses["Crocodile"] = state updateFarmState() end,
 })
@@ -390,7 +390,7 @@ MainTab:Divider()
 
 MainTab:Dropdown({
     Title  = "Select Equip Slot",
-    Desc   = "", 
+    Desc   = "",
     Icon   = "hash",
     Values = { "Slot 1", "Slot 2", "Slot 3", "Slot 4", "Slot 5" },
     Value  = "Slot 1",
@@ -402,7 +402,7 @@ MainTab:Dropdown({
 
 MainTab:Toggle({
     Title = "Auto Equip",
-    Desc  = "", 
+    Desc  = "",
     Icon  = "shield", Value = false,
     Callback = function(state)
         if state then
@@ -494,7 +494,7 @@ OtherTab:Button({
 })
 
 -- ========================
--- Floating Button (แก้ไขระบบสลับสถานะใหม่ เสถียรชัวร์ 100%)
+-- Floating Button (Fixed)
 -- ========================
 local FloatGui    = Instance.new("ScreenGui")
 local FloatBtn    = Instance.new("TextButton")
@@ -523,7 +523,7 @@ FloatBtn.Font             = Enum.Font.GothamBold
 FloatBtn.TextSize         = 24
 FloatBtn.Active           = true
 FloatBtn.ZIndex           = 99999
-FloatBtn.Visible          = false -- เริ่มต้นเมนูหลักเปิดอยู่ ปุ่มลอยจึงซ่อนตัวไว้ก่อน
+FloatBtn.Visible          = false
 
 FloatCorner.CornerRadius = UDim.new(0, 14)
 FloatCorner.Parent       = FloatBtn
@@ -533,10 +533,10 @@ FloatStroke.Thickness = 2.5
 FloatStroke.Parent    = FloatBtn
 
 -- Drag Logic
-local dragging   = false
-local dragInput  = nil
-local dragStart  = nil
-local startPos   = nil
+local dragging  = false
+local dragInput = nil
+local dragStart = nil
+local startPos  = nil
 
 FloatBtn.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1
@@ -571,29 +571,80 @@ UserInputService.InputChanged:Connect(function(input)
     end
 end)
 
--- ระบบสลับหน้าต่างเปิด/ปิด UI (ใช้การ Toggle ของ WindUI ร่วมกับการคุมแบบดักค่าตัวแปร)
-local menuOpenState = true
+-- ========================
+-- Show / Hide Menu Functions
+-- ========================
+local menuVisible = true
+
+local function showMenu()
+    menuVisible = true
+    FloatBtn.Visible = false
+    pcall(function()
+        if Window.Show then
+            Window:Show()
+        elseif Window.Open then
+            Window:Open()
+        elseif Window.Toggle then
+            if Window.Main and not Window.Main.Visible then
+                Window:Toggle()
+            end
+        end
+    end)
+end
+
+local function hideMenu()
+    menuVisible = false
+    FloatBtn.Visible = true
+    pcall(function()
+        if Window.Hide then
+            Window:Hide()
+        elseif Window.Close then
+            Window:Close()
+        elseif Window.Toggle then
+            if Window.Main and Window.Main.Visible then
+                Window:Toggle()
+            end
+        end
+    end)
+end
 
 FloatBtn.MouseButton1Click:Connect(function()
-    if dragging then return end 
-    menuOpenState = true
-    Window:Toggle()     -- สั่งขยายหน้าต่างหลักกลับคืนมา
-    FloatBtn.Visible = false
+    if dragStart and startPos then
+        local curPos = FloatBtn.Position
+        local dx = math.abs(curPos.X.Offset - startPos.X.Offset)
+        local dy = math.abs(curPos.Y.Offset - startPos.Y.Offset)
+        if dx > 5 or dy > 5 then return end
+    end
+    showMenu()
 end)
 
--- ดักจับการสลับหน้าต่างผ่าน Background Loop ที่แม่นยำและไม่หน่วงเครื่อง
 task.spawn(function()
     task.wait(1)
+    local lastState = true
     while true do
-        task.wait(0.3)
+        task.wait(0.25)
         pcall(function()
-            if Window and Window.Main then
-                -- เช็คโดยตรงจาก Property .Visible ของเฟรมหลักใน WindUI
-                local actualVisible = Window.Main.Visible
-                if actualVisible ~= menuOpenState then
-                    menuOpenState = actualVisible
-                    FloatBtn.Visible = not actualVisible
+            local currentlyVisible = false
+
+            if Window.Main then
+                currentlyVisible = Window.Main.Visible
+            elseif Window.Frame then
+                currentlyVisible = Window.Frame.Visible
+            elseif Window.Container then
+                currentlyVisible = Window.Container.Visible
+            else
+                for _, gui in ipairs(coreGui:GetChildren()) do
+                    if gui.Name == "WindUI" or gui.Name == "MonHubSimple" then
+                        currentlyVisible = gui.Enabled
+                        break
+                    end
                 end
+            end
+
+            if currentlyVisible ~= lastState then
+                lastState = currentlyVisible
+                menuVisible = currentlyVisible
+                FloatBtn.Visible = not currentlyVisible
             end
         end)
     end
