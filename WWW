@@ -228,9 +228,21 @@ local function updateFarmState()
             end
 
             if not hasTarget and activeBossCount > 0 then
+                -- บอสไม่เกิด → วาร์ปกลับ SavePosition
                 if useSavePosEnabled and savedPosition then
                     local hrp = getHRP()
-                    if hrp then hrp.CFrame = CFrame.new(savedPosition) end
+                    if hrp then
+                        hrp.CFrame = CFrame.new(savedPosition)
+                        -- [ใหม่] หลังวาร์ปกลับ ตรวจ UIStroke อีกรอบ
+                        -- รอให้ตัวละครลงพื้นก่อน แล้วค่อยตรวจ
+                        task.wait(0.3)
+                        if autoEquipEnabled then
+                            local stroke = getSlotStroke()
+                            if stroke and isStrokeBlack(stroke) then
+                                doEquip()
+                            end
+                        end
+                    end
                 end
                 task.wait(0.3)
             else
@@ -241,7 +253,21 @@ local function updateFarmState()
 end
 
 -- ========================
+-- isBossActive: ตรวจว่ามีโมเดลบอสที่เปิดไว้โผล่อยู่ใน workspace จริงๆ
+-- ========================
+local function isBossActive()
+    for bossName, enabled in pairs(targetBosses) do
+        if enabled and getBossPosition(bossName) then
+            return true
+        end
+    end
+    return false
+end
+
+-- ========================
 -- Auto Skill Logic
+-- รันเฉพาะเมื่อ isBossActive() = true (เจอโมเดลบอส)
+-- หากไม่เจอบอส → หยุดรอ ไม่กดสกิล
 -- ========================
 local function stopAutoSkill()
     autoSkillEnabled = false
@@ -256,14 +282,20 @@ local function startAutoSkill()
     autoSkillEnabled = true
     autoSkillThread = task.spawn(function()
         while autoSkillEnabled do
-            local firedAny = false
-            for keyStr, isSelected in pairs(selectedSkills) do
-                if isSelected and Enum.KeyCode[keyStr] then
-                    firedAny = true
-                    task.spawn(function() pressKey(Enum.KeyCode[keyStr]) end)
+            if isBossActive() then
+                -- มีบอสโผล่ → กดสกิลได้
+                local firedAny = false
+                for keyStr, isSelected in pairs(selectedSkills) do
+                    if isSelected and Enum.KeyCode[keyStr] then
+                        firedAny = true
+                        task.spawn(function() pressKey(Enum.KeyCode[keyStr]) end)
+                    end
                 end
+                task.wait(firedAny and 0.3 or 0.1)
+            else
+                -- ไม่มีบอส → รอโดยไม่กดสกิล
+                task.wait(0.5)
             end
-            task.wait(firedAny and 0.3 or 0.1)
         end
     end)
 end
