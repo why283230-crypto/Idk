@@ -1,0 +1,303 @@
+-- Test (WindUI Custom Mob Farm)
+local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
+
+-- ========================
+-- Services
+-- ========================
+local Players             = game:GetService("Players")
+local UserInputService    = game:GetService("UserInputService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local HttpService         = game:GetService("HttpService")
+local TeleportService     = game:GetService("TeleportService")
+local LocalPlayer         = Players.LocalPlayer
+
+-- ========================
+-- State & Variables
+-- ========================
+local selectedMobs       = {}    -- เก็บรายชื่อมอนสเตอร์ที่เลือกไว้ (Multi-Select)
+local availableMobs      = {}    -- เก็บรายชื่อมอนสเตอร์ทั้งหมดที่แสกนเจอ
+local farmMobEnabled     = false -- สถานะการฟาร์ม
+local farmMobThread      = nil   -- เธรดสคริปต์ฟาร์ม
+local mobDropdown        = nil   -- ตัวแปรเก็บ Object ของ Dropdown เพื่อใช้อัปเดตข้อมูล
+
+-- ========================
+-- Helpers
+-- ========================
+local function getHRP()
+    local char = LocalPlayer.Character
+    return char and char:FindFirstChild("HumanoidRootPart")
+end
+
+-- ฟังก์ชันสแกนหาโมเดลมอนสเตอร์ใน workspace.ClientEntities
+local function scanClientEntities()
+    local mobsFound = {}
+    local clientEntities = workspace:FindFirstChild("ClientEntities")
+    
+    if clientEntities then
+        for _, child in ipairs(clientEntities:GetChildren()) do
+            -- คัดเลือกเฉพาะ Object ที่เป็น Model และมีส่วนประกอบของร่างกาย หรือตามโครงสร้างของเกม
+            if child:IsA("Model") and not table.find(mobsFound, child.Name) then
+                table.insert(mobsFound, child.Name)
+            end
+        end
+    end
+    
+    -- หากไม่เจออะไรเลย ให้มีค่า Default ป้องกัน UI เออเร่อ
+    if #mobsFound == 0 then
+        table.insert(mobsFound, "No Mobs Found")
+    end
+    
+    table.sort(mobsFound)
+    availableMobs = mobsFound
+    return mobsFound
+end
+
+-- ฟังก์ชันหาตำแหน่งของมอนสเตอร์ตามชื่อที่ระบุ
+local function getMobPosition(mobName)
+    local clientEntities = workspace:FindFirstChild("ClientEntities")
+    if not clientEntities then return nil end
+    
+    for _, child in ipairs(clientEntities:GetChildren()) do
+        if child.Name == mobName and child:IsA("Model") then
+            local root = child:FindFirstChild("HumanoidRootPart") 
+                or child:FindFirstChild("RootPart") 
+                or child.PrimaryPart
+                
+            if not root then
+                for _, part in ipairs(child:GetDescendants()) do
+                    if part:IsA("BasePart") then root = part break end
+                end
+            end
+            
+            if root then
+                return root.Position
+            end
+        end
+    end
+    return nil
+end
+
+-- ========================
+-- Window Creation
+-- ========================
+local Window = WindUI:CreateWindow({
+    Title       = "Test",
+    Icon        = "swords",
+    Author      = "Custom Developer",
+    Folder      = "TestMobFarm",
+    Size        = UDim2.fromOffset(450, 400),
+    Theme       = "Dark",
+    Acrylic     = false,
+    Transparent = false,
+})
+
+task.wait(0.3)
+
+-- เพิ่ม Category: Mob(for kills)
+local MobTab = Window:Tab({ Title = "Mob(for kills)", Icon = "skull" })
+
+MobTab:Section({ Title = "Monster Farming System" })
+
+-- สแกนรายชื่อมอนสเตอร์ครั้งแรกก่อนสร้าง Dropdown
+scanClientEntities()
+
+-- เพิ่ม Dropdown สแกนหาโมเดล Mob (Multi-Select สามารถเลือกได้หลายตัว)
+mobDropdown = MobTab:Dropdown({
+    Title  = "Select Mobs to Farm", 
+    Icon   = "ghost",
+    Multi  = true, 
+    Values = availableMobs,
+    Callback = function(selectedList)
+        selectedMobs = {}
+        if type(selectedList) == "table" then
+            for _, mobName in pairs(selectedList) do
+                selectedMobs[mobName] = true
+            end
+        elseif type(selectedList) == "string" then
+            selectedMobs[selectedList] = true
+        end
+    end,
+})
+
+-- ปุ่ม Refresh รายชื่อมอนสเตอร์ใน Dropdown
+MobTab:Button({
+    Title = "Refresh Mob List",
+    Icon  = "refresh-cw",
+    Callback = function()
+        local newMobs = scanClientEntities()
+        if mobDropdown and mobDropdown.Refresh then
+            mobDropdown:Refresh(newMobs)
+            WindUI:Notify({ Title = "Mob List Refreshed", Content = "Found " .. tostring(#newMobs) .. " types of mobs.", Duration = 3, Icon = "check-circle" })
+        else
+            WindUI:Notify({ Title = "Error", Content = "Cannot refresh dropdown", Duration = 3, Icon = "alert-circle" })
+        end
+    end,
+})
+
+MobTab:Divider()
+
+-- ฟังก์ชันลูปวาร์ปไปหามอนสเตอร์ที่เลือก
+local function updateMobFarmState()
+    if not farmMobEnabled then
+        if farmMobThread then task.cancel(farmMobThread) farmMobThread = nil end
+        return
+    end
+    
+    farmMobThread = task.spawn(function()
+        while farmMobEnabled do
+            local teleportsDone = false
+            
+            for mobName, isSelected in pairs(selectedMobs) do
+                if not farmMobEnabled then break end
+                if isSelected and mobName ~= "No Mobs Found" then
+                    local pos = getMobPosition(mobName)
+                    local hrp = getHRP()
+                    
+                    if hrp and pos then
+                        -- วาร์ปไปหาพิกัดของมอนสเตอร์ตัวนั้นๆ
+                        hrp.CFrame = CFrame.new(pos)
+                        teleportsDone = true
+                        task.wait(0.2) -- หน่วงเวลาเล็กน้อยเพื่อเสถียรภาพในการฟาร์ม
+                    end
+                end
+            end
+            
+            if not teleportsDone then
+                task.wait(0.5) -- หากไม่เจอมอนสเตอร์ที่เลือก ให้รอซักครู่แล้วตรวจสอบใหม่
+            else
+                task.wait(0.1)
+            end
+        end
+    end)
+end
+
+-- ปุ่มเปิด/ปิด เริ่มต้นการฟาร์ม (Start Farm Mob)
+MobTab:Toggle({
+    Title = "Start Farm Mob", 
+    Icon = "play",
+    Value = false,
+    Callback = function(state)
+        farmMobEnabled = state
+        if state then
+            -- ตรวจสอบว่าได้เลือกมอนสเตอร์ไว้หรือยัง
+            local hasSelection = false
+            for _, v in pairs(selectedMobs) do if v then hasSelection = true break end end
+            
+            if not hasSelection then
+                WindUI:Notify({ Title = "Warning", Content = "Please select at least one mob from dropdown!", Duration = 4, Icon = "alert-triangle" })
+            else
+                WindUI:Notify({ Title = "Mob Farming Started ✅", Content = "Teleporting to selected targets...", Duration = 3, Icon = "check" })
+            end
+            updateMobFarmState()
+        else
+            farmMobEnabled = false
+            updateMobFarmState()
+            WindUI:Notify({ Title = "Mob Farming Stopped ❌", Content = "Stopped teleportation", Duration = 3, Icon = "x" })
+        end
+    end,
+})
+
+-- ========================
+-- Floating Toggle Button
+-- ========================
+local FloatGui    = Instance.new("ScreenGui")
+local FloatBtn    = Instance.new("TextButton")
+local FloatCorner = Instance.new("UICorner")
+local FloatStroke = Instance.new("UIStroke")
+
+FloatGui.Name           = "TestFloatGui"
+FloatGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+FloatGui.ResetOnSpawn   = false
+FloatGui.DisplayOrder   = 999
+
+local coreGui = game:GetService("CoreGui")
+pcall(function() FloatGui.Parent = coreGui end)
+if not FloatGui.Parent or FloatGui.Parent ~= coreGui then
+    FloatGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+end
+
+FloatBtn.Name             = "ToggleBtn"
+FloatBtn.Parent           = FloatGui
+FloatBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+FloatBtn.Position         = UDim2.new(0.05, 0, 0.3, 0)
+FloatBtn.Size             = UDim2.fromOffset(52, 52)
+FloatBtn.Text             = "T"
+FloatBtn.TextColor3       = Color3.fromRGB(255, 255, 255)
+FloatBtn.Font             = Enum.Font.GothamBold
+FloatBtn.TextSize         = 24
+FloatBtn.Active           = true
+FloatBtn.ZIndex           = 99999
+FloatBtn.Visible          = false
+
+FloatCorner.CornerRadius = UDim.new(0, 14)
+FloatCorner.Parent       = FloatBtn
+
+FloatStroke.Color     = Color3.fromRGB(0, 150, 255)
+FloatStroke.Thickness = 2.5
+FloatStroke.Parent    = FloatBtn
+
+local dragging  = false
+local dragInput = nil
+local dragStart = nil
+local startPos  = nil
+
+FloatBtn.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging  = true
+        dragStart = input.Position
+        startPos  = FloatBtn.Position
+    end
+end)
+
+FloatBtn.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = false
+    end
+end)
+
+FloatBtn.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        dragInput = input
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if dragging and dragInput and input == dragInput then
+        local delta = input.Position - dragStart
+        FloatBtn.Position = UDim2.new(
+            startPos.X.Scale, startPos.X.Offset + delta.X,
+            startPos.Y.Scale, startPos.Y.Offset + delta.Y
+        )
+    end
+end)
+
+FloatBtn.MouseButton1Click:Connect(function()
+    pcall(function()
+        if Window.Toggle then Window:Toggle()
+        elseif Window.Show then Window:Show() end
+    end)
+end)
+
+task.spawn(function()
+    while true do
+        task.wait(0.5)
+        pcall(function()
+            local currentUiVisible = false
+            for _, gui in ipairs(coreGui:GetChildren()) do
+                if gui.Name == "WindUI" and gui:IsA("ScreenGui") then
+                    currentUiVisible = gui.Enabled
+                    break
+                end
+            end
+            FloatBtn.Visible = not currentUiVisible
+        end)
+    end
+end)
+
+-- แจ้งเตือนเมื่อโหลดเสร็จ
+WindUI:Notify({
+    Title    = "Test UI Loaded",
+    Content  = "Category 'Mob(for kills)' is ready!",
+    Duration = 4,
+    Icon     = "check",
+})
