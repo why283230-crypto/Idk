@@ -154,10 +154,10 @@ local function updateMobFarmState()
                     local hrp = getHRP()
                     
                     if hrp and pos then
-                        -- วาร์ปไปหาพิกัดของมอนสเตอร์ตัวนั้นๆ
-                        hrp.CFrame = CFrame.new(pos)
+                        -- วาร์ปไปหาพิกัดของมอนสเตอร์ตัวนั้นๆ โดยบวกความสูงแกน Y เพิ่มไป 5 หน่วย เพื่อให้อยู่บนหัว
+                        hrp.CFrame = CFrame.new(pos + Vector3.new(0, 5, 0))
                         teleportsDone = true
-                        task.wait(0.2) -- หน่วงเวลาเล็กน้อยเพื่อเสถียรภาพในการฟาร์ม
+                        task.wait(0.5) -- หน่วงเวลาในการวาร์ป 0.5 วินาทีตามที่ต้องการ
                     end
                 end
             end
